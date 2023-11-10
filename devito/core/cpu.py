@@ -27,6 +27,8 @@ class Cpu64OperatorMixin(object):
         o['mpi'] = oo.pop('mpi')
         o['parallel'] = o['openmp']  # Backwards compatibility
 
+        o['out-of-core'] = oo.pop('out-of-core', False)
+
         # Buffering
         o['buf-async-degree'] = oo.pop('buf-async-degree', None)
 

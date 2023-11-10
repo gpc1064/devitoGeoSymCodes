@@ -137,6 +137,11 @@ class Operator(Callable):
     _default_includes = ['stdlib.h', 'math.h', 'sys/time.h']
     _default_globals = []
 
+    _out_of_core_headers=[("_GNU_SOURCE", ""),
+                          (("ifndef", "NDISKS"), ("NDISKS", "8")), #Find a way to replace 8 by a parameter
+                          (("ifdef", "CACHE"), ("OPEN_FLAGS", "O_WRONLY | O_CREAT"), ("else", ), ("OPEN_FLAGS", "O_DIRECT | O_WRONLY | O_CREAT"))]
+    _out_of_core_includes = ["fcntl.h"]
+
     def __new__(cls, expressions, **kwargs):
         if expressions is None:
             # Return a dummy Callable. This is exploited by unpickling. Users
@@ -176,6 +181,8 @@ class Operator(Callable):
         # Python- (i.e., compile-) and C-level (i.e., run-time) performance
         profiler = create_profile('timers')
 
+        out_of_core = kwargs['options']['out-of-core']
+
         # Lower the input expressions into an IET
         irs, byproduct = cls._lower(expressions, profiler=profiler, **kwargs)
 
@@ -186,11 +193,13 @@ class Operator(Callable):
         # Header files, etc.
         op._headers = OrderedSet(*cls._default_headers)
         op._headers.update(byproduct.headers)
+        if out_of_core: op._headers.update(cls._out_of_core_headers)
         op._globals = OrderedSet(*cls._default_globals)
         op._globals.update(byproduct.globals)
         op._includes = OrderedSet(*cls._default_includes)
         op._includes.update(profiler._default_includes)
         op._includes.update(byproduct.includes)
+        if out_of_core: op._includes.update(cls._out_of_core_includes)
 
         # Required for the jit-compilation
         op._compiler = kwargs['compiler']
@@ -419,7 +428,7 @@ class Operator(Callable):
         (i.e., no definition placed yet).
         """
         # Build an unbounded IET from a ScheduleTree
-        uiet = iet_build(stree)
+        uiet = iet_build(stree, **kwargs)
 
         # Analyze the IET Sections for C-level profiling
         try:
