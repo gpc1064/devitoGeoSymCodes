@@ -1,5 +1,7 @@
 import numpy as np
 
+import ctypes as ct
+
 import cgen
 
 from sympy import Mod
@@ -14,11 +16,14 @@ from devito.ir.equations import IREq, ClusterizedEq
 from devito.symbolics.extended_sympy import FieldFromPointer
 from devito.tools import timed_pass
 from devito.symbolics import (CondEq, CondNe, Macro, String)
-from devito.types import CustomDimension, Array, PointerArray, Symbol, IndexedData
+from devito.types import CustomDimension, Array, PointerArray, Symbol, IndexedData, Pointer
 from devito.ir.support import (Interval, IntervalGroup, IterationSpace)
 
 __all__ = ['iet_build']
 
+
+class FILE(ct.Structure):
+    _fields_ = [("FILE", ct.c_int)]
 
 @timed_pass(name='build')
 def iet_build(stree, **kwargs):
@@ -75,16 +80,6 @@ def _ooc_build(iet_body, nthreads):
     # Build files array
     cdim = [CustomDimension(name="nthreads", symbolic_size=nthreads)]
     filesArray = Array(name='files', dimensions=cdim, dtype=np.int32)
-
-
-    nameDim = [CustomDimension(name="nameDim", symbolic_size=100)]
-    nameArray = Array(name='name', dimensions=nameDim, dtype=np.byte)
-    pstring = String(r"'fwd_disks_%d_threads_%d.csv'")
-    namePrint = Call(name="sprintf", arguments=[nameArray, pstring, "NDISKS", nthreads])
-
-    pstring = String(r"'w'")
-    fptSymbol = Symbol(name="fpt", dtype=np.byte)
-    nameFopen = Call(name="fopen", arguments=[nameArray, pstring], retobj=fptSymbol)
 
     # Test files array 
     pstring = String("'Error to alloc'")
@@ -144,10 +139,16 @@ def _ooc_build(iet_body, nthreads):
     
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, iDim)
 
+    fileType = np.dtype(FILE)
+
+    filePointer = Pointer(name="ftp", dtype=FILE)
+
+    intPointer = Pointer(name="ftp", dtype=np.intp)
+
+    fopenCall = Call(name="fopen", arguments=["w"], retobj=filePointer)
     #import pdb; pdb.set_trace()
 
-    iet_body.insert(0, nameFopen)
-    iet_body.insert(0, namePrint)
+    iet_body.insert(0, fopenCall)
     iet_body.insert(0, UExp)
     iet_body.insert(0, floatSizeInit)
     iet_body.insert(0, sec)
@@ -202,12 +203,14 @@ def open_threads_build(nthreads, filesArray, iSymbol, iDim):
     itNodes=[]
     itNodes.append(Expression(cNvmeIdEq, None, True))
 
-    nameSymbol = Symbol(name="name", dtype=np.byte)
+    nameDim = [CustomDimension(name="nameDim", symbolic_size=100)]
+    nameArray = Array(name='name', dimensions=nameDim, dtype=np.byte)
+
     pstring = String(r"'data/nvme%d/thread_%d.data'")
-    itNodes.append(Call(name="sprintf", arguments=[nameSymbol, pstring, nvme_id, iSymbol]))
+    itNodes.append(Call(name="sprintf", arguments=[nameArray, pstring, nvme_id, iSymbol]))
 
     pstring = String(r"'Creating file %s\n'")
-    itNodes.append(Call(name="printf", arguments=[pstring, nameSymbol]))
+    itNodes.append(Call(name="printf", arguments=[pstring, nameArray]))
 
     ifNodes=[]
     pstring = String(r"'Cannot open output file\n'")
@@ -215,7 +218,7 @@ def open_threads_build(nthreads, filesArray, iSymbol, iDim):
 
     ifNodes.append(Call(name="exit", arguments=1))
 
-    openCall = Call(name="open", arguments=[nameSymbol, "OPEN_FLAGS", "S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH"], retobj=filesArray[iSymbol])
+    openCall = Call(name="open", arguments=[nameArray, "OPEN_FLAGS", "S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH"], retobj=filesArray[iSymbol])
     itNodes.append(openCall)
 
     openCond = Conditional(CondEq(filesArray[iSymbol], -1), ifNodes)
@@ -266,18 +269,17 @@ def save_build(nthreads, write_size):
 
     pstring = String(r"'[IO] Close %.2lf s\n'")
     printfNodes.append(Call(name="printf", arguments=[pstring, tClose]))
-
+    
+    nameDim = [CustomDimension(name="nameDim", symbolic_size=100)]
+    nameArray = Array(name='name', dimensions=nameDim, dtype=np.byte)
 
     fileOpenNodes = []
-    # Build files array
-    nameSymbol = Symbol(name="name", dtype=np.byte)
     pstring = String(r"'fwd_disks_%d_threads_%d.csv'")
-    fileOpenNodes.append(Call(name="sprintf", arguments=[nameSymbol, pstring, "NDISKS", nthreads]))
+    fileOpenNodes.append(Call(name="sprintf", arguments=[nameArray, pstring, "NDISKS", nthreads]))
 
     pstring = String(r"'w'")
     fptSymbol = Symbol(name="fpt", dtype=np.byte)
-    fileOpenNodes.append(Call(name="fopen", arguments=[nameSymbol, pstring], retobj=fptSymbol))
-
+    fileOpenNodes.append(Call(name="fopen", arguments=[nameArray, pstring], retobj=fptSymbol))
 
     filePrintNodes = []
     pstring = String(r"'Disks, Threads, Bytes, [FWD] Section0, [FWD] Section1, [FWD] Section2, [IO] Open, [IO] Write, [IO] Close\n'")

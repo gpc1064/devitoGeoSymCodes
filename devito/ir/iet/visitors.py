@@ -230,6 +230,8 @@ class CGen(Visitor):
             strtype = obj._C_typedata
             strshape = ''.join('[%s]' % ccode(i) for i in obj.symbolic_shape)
         else:
+            #print(obj)
+            #import pdb; pdb.set_trace()
             strtype = ctypes_to_cstr(obj._C_ctype)
             strshape = ''
             if isinstance(obj, (AbstractFunction, IndexedData)) and level >= 1:
