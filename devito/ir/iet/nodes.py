@@ -1381,6 +1381,7 @@ class HaloSpot(Node):
         return tuple(self.fmapper)
 
 
+
 # Utility classes
 
 

@@ -1,4 +1,4 @@
-from ctypes import c_double, c_void_p
+from ctypes import c_double, c_void_p, c_int, Structure
 
 import numpy as np
 from sympy.core.core import ordering_of_classes
@@ -8,7 +8,7 @@ from devito.types.basic import IndexedData
 from devito.tools import Pickable, as_tuple
 
 __all__ = ['Timer', 'Pointer', 'VolatileInt', 'FIndexed', 'Wildcard',
-           'Global', 'Hyperplane', 'Indirection', 'Temp', 'Jump']
+           'Global', 'Hyperplane', 'Indirection', 'Temp', 'Jump', 'FILE']
 
 
 class Timer(CompositeObject):
@@ -192,3 +192,10 @@ class Jump(object):
     """
 
     pass
+
+
+class FILE(Structure):
+    """
+    Class representing the FILE structure type in C/C++.
+    """
+    _fields_ = [("FILE", c_int)]

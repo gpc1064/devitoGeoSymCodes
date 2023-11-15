@@ -16,14 +16,11 @@ from devito.ir.equations import IREq, ClusterizedEq
 from devito.symbolics.extended_sympy import FieldFromPointer
 from devito.tools import timed_pass
 from devito.symbolics import (CondEq, CondNe, Macro, String)
-from devito.types import CustomDimension, Array, PointerArray, Symbol, IndexedData, Pointer
+from devito.types import CustomDimension, Array, PointerArray, Symbol, IndexedData, Pointer, FILE
 from devito.ir.support import (Interval, IntervalGroup, IterationSpace)
 
 __all__ = ['iet_build']
 
-
-class FILE(ct.Structure):
-    _fields_ = [("FILE", ct.c_int)]
 
 @timed_pass(name='build')
 def iet_build(stree, **kwargs):
@@ -143,10 +140,9 @@ def _ooc_build(iet_body, nthreads):
 
     filePointer = Pointer(name="ftp", dtype=FILE)
 
-    intPointer = Pointer(name="ftp", dtype=np.intp)
+    intPointer = Pointer(name="ftpInt", dtype=np.intp)
 
     fopenCall = Call(name="fopen", arguments=["w"], retobj=filePointer)
-    #import pdb; pdb.set_trace()
 
     iet_body.insert(0, fopenCall)
     iet_body.insert(0, UExp)

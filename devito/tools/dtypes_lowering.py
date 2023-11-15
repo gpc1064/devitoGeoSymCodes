@@ -7,6 +7,8 @@ import ctypes
 import numpy as np
 from cgen import dtype_to_ctype as cgen_dtype_to_ctype
 
+
+
 __all__ = ['int2', 'int3', 'int4', 'float2', 'float3', 'float4', 'double2',  # noqa
            'double3', 'double4', 'dtypes_vector_mapper',
            'dtype_to_cstr', 'dtype_to_ctype', 'dtype_to_mpitype', 'dtype_len',
@@ -165,11 +167,17 @@ for base_name, base_dtype in mapper.items():
 
 
 def ctypes_to_cstr(ctype, toarray=None):
+    # NOTE: Try to fix circular import error on devito.types.misc.FILE
+    import devito.types as Dtypes
+
     """Translate ctypes types into C strings."""
     if ctype in ctypes_vector_mapper.values():
         retval = ctype.__name__
     elif issubclass(ctype, ctypes.Structure):
-        retval = 'struct %s' % ctype.__name__
+        if issubclass(ctype, Dtypes.FILE):
+            retval = '%s *' % ctype.__name__
+        else:
+            retval = 'struct %s' % ctype.__name__
     elif issubclass(ctype, ctypes.Union):
         retval = 'union %s' % ctype.__name__
     elif issubclass(ctype, ctypes._Pointer):
