@@ -130,26 +130,19 @@ def _ooc_build(iet_body, nthreads):
     cUEq = ClusterizedEq(UEq, ispace=None)
     UExp = Expression(cUEq, None, True)
 
-    writeCallable = write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uStencil.symbolic_shape[1])
+    writeSection = write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uStencil.symbolic_shape[1])
     
     saveCallable = save_build(nthreads, write_size)
     
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, iDim)
 
-    fileType = np.dtype(FILE)
+    #import pdb; pdb.set_trace()
 
-    filePointer = Pointer(name="ftp", dtype=FILE)
-
-    intPointer = Pointer(name="ftpInt", dtype=np.intp)
-
-    fopenCall = Call(name="fopen", arguments=["w"], retobj=filePointer)
-
-    iet_body.insert(0, fopenCall)
     iet_body.insert(0, UExp)
     iet_body.insert(0, floatSizeInit)
     iet_body.insert(0, sec)
     iet_body.append(closeSec)
-    iet_body.append(writeCallable)
+    iet_body.append(writeSection)
     iet_body.append(writeExp)
     iet_body.append(saveCall)
 
@@ -274,15 +267,15 @@ def save_build(nthreads, write_size):
     fileOpenNodes.append(Call(name="sprintf", arguments=[nameArray, pstring, "NDISKS", nthreads]))
 
     pstring = String(r"'w'")
-    fptSymbol = Symbol(name="fpt", dtype=np.byte)
-    fileOpenNodes.append(Call(name="fopen", arguments=[nameArray, pstring], retobj=fptSymbol))
+    filePointer = Pointer(name="ftp", dtype=FILE)
+    fileOpenNodes.append(Call(name="fopen", arguments=[nameArray, pstring], retobj=filePointer))
 
     filePrintNodes = []
     pstring = String(r"'Disks, Threads, Bytes, [FWD] Section0, [FWD] Section1, [FWD] Section2, [IO] Open, [IO] Write, [IO] Close\n'")
-    filePrintNodes.append(Call(name="fprintf", arguments=[fptSymbol, pstring]))
+    filePrintNodes.append(Call(name="fprintf", arguments=[filePointer, pstring]))
     
     pstring = String(r"'%d, %d, %ld, %.2lf, %.2lf, %.2lf, %.2lf, %.2lf, %.2lf\n'")
-    filePrintNodes.append(Call(name="fprintf", arguments=[fptSymbol, pstring, "NDISKS", nthreads, write_size,
+    filePrintNodes.append(Call(name="fprintf", arguments=[filePointer, pstring, "NDISKS", nthreads, write_size,
                                                           tSec0, tSec1, tSec2, tOpen, tWrite, tClose]))
 
     saveCallBody = CallableBody(printfNodes+fileOpenNodes+filePrintNodes)
