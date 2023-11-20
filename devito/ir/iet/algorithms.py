@@ -82,7 +82,6 @@ def _ooc_build(iet_body, nthreads):
     pstring = String("'Error to alloc'")
     printfCall = Call(name="printf", arguments=pstring)
     exitCall = Call(name="exit", arguments=1)
-    #arrCond = Conditional(CondEq(Symbol(name=filesArray.name), Macro('NULL')), [exitCall, printfCall])
     arrCond = Conditional(CondEq(filesArray, Macro('NULL')), [printfCall, exitCall])
 
     #Call open_thread_files
@@ -136,7 +135,7 @@ def _ooc_build(iet_body, nthreads):
     
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, iDim)
 
-    #import pdb; pdb.set_trace()
+    import pdb; pdb.set_trace()
 
     iet_body.insert(0, UExp)
     iet_body.insert(0, floatSizeInit)
@@ -207,7 +206,9 @@ def open_threads_build(nthreads, filesArray, iSymbol, iDim):
 
     ifNodes.append(Call(name="exit", arguments=1))
 
-    openCall = Call(name="open", arguments=[nameArray, "OPEN_FLAGS", "S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH"], retobj=filesArray[iSymbol])
+    opFlagsStr = String("OPEN_FLAGS")
+    flagsStr = String("S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH")
+    openCall = Call(name="open", arguments=[nameArray, opFlagsStr, flagsStr], retobj=filesArray[iSymbol])
     itNodes.append(openCall)
 
     openCond = Conditional(CondEq(filesArray[iSymbol], -1), ifNodes)
@@ -232,7 +233,8 @@ def save_build(nthreads, write_size):
     printfNodes.append(Call(name="printf", arguments=[pstring, nthreads]))
 
     pstring = String(r"'Disks %d\n'")
-    printfNodes.append(Call(name="printf", arguments=[pstring, "NDISKS"]))
+    ndisksStr = String("NDISKS")
+    printfNodes.append(Call(name="printf", arguments=[pstring, ndisksStr]))
 
     tSec0 = FieldFromPointer("section0", "timers")
     tSec1 = FieldFromPointer("section1", "timers")
@@ -264,7 +266,7 @@ def save_build(nthreads, write_size):
 
     fileOpenNodes = []
     pstring = String(r"'fwd_disks_%d_threads_%d.csv'")
-    fileOpenNodes.append(Call(name="sprintf", arguments=[nameArray, pstring, "NDISKS", nthreads]))
+    fileOpenNodes.append(Call(name="sprintf", arguments=[nameArray, pstring, ndisksStr, nthreads]))
 
     pstring = String(r"'w'")
     filePointer = Pointer(name="ftp", dtype=FILE)
@@ -275,7 +277,7 @@ def save_build(nthreads, write_size):
     filePrintNodes.append(Call(name="fprintf", arguments=[filePointer, pstring]))
     
     pstring = String(r"'%d, %d, %ld, %.2lf, %.2lf, %.2lf, %.2lf, %.2lf, %.2lf\n'")
-    filePrintNodes.append(Call(name="fprintf", arguments=[filePointer, pstring, "NDISKS", nthreads, write_size,
+    filePrintNodes.append(Call(name="fprintf", arguments=[filePointer, pstring, ndisksStr, nthreads, write_size,
                                                           tSec0, tSec1, tSec2, tOpen, tWrite, tClose]))
 
     saveCallBody = CallableBody(printfNodes+fileOpenNodes+filePrintNodes)
