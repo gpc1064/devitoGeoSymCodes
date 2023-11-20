@@ -428,7 +428,7 @@ class Operator(Callable):
         (i.e., no definition placed yet).
         """
         # Build an unbounded IET from a ScheduleTree
-        uiet = iet_build(stree, **kwargs)
+        uiet = iet_build(stree, profiler=profiler, **kwargs)
 
         # Analyze the IET Sections for C-level profiling
         try:

@@ -16,7 +16,7 @@ from devito.ir.equations import IREq, ClusterizedEq
 from devito.symbolics.extended_sympy import FieldFromPointer
 from devito.tools import timed_pass
 from devito.symbolics import (CondEq, CondNe, Macro, String)
-from devito.types import CustomDimension, Array, PointerArray, Symbol, IndexedData, Pointer, FILE
+from devito.types import CustomDimension, Array, PointerArray, Symbol, IndexedData, Pointer, FILE, Timer
 from devito.ir.support import (Interval, IntervalGroup, IterationSpace)
 
 __all__ = ['iet_build']
@@ -27,6 +27,7 @@ def iet_build(stree, **kwargs):
     """
     Construct an Iteration/Expression tree(IET) from a ScheduleTree.
     """
+
     out_of_core = kwargs['options']['out-of-core']
     nsections = 0
     queues = OrderedDict()
@@ -35,7 +36,7 @@ def iet_build(stree, **kwargs):
             # We hit this handle at the very end of the visit
             iet_body = queues.pop(i)
             if(out_of_core):
-                iet_body = _ooc_build(iet_body, kwargs['sregistry'].nthreads)
+                iet_body = _ooc_build(iet_body, kwargs['sregistry'].nthreads, kwargs['profiler'])
                 return List(body=iet_body)
             else:                
                 return List(body=iet_body)
@@ -72,7 +73,7 @@ def iet_build(stree, **kwargs):
 
 
 @timed_pass(name='ooc_build')
-def _ooc_build(iet_body, nthreads):
+def _ooc_build(iet_body, nthreads, profiler):
 
     # Build files array
     cdim = [CustomDimension(name="nthreads", symbolic_size=nthreads)]
@@ -107,7 +108,8 @@ def _ooc_build(iet_body, nthreads):
     cWriteEq = ClusterizedEq(writeEq, ispace=None)
     writeExp = Expression(cWriteEq, None, True)
     
-    saveCall = Call(name='save', arguments=[nthreads, write_size]) #save(nthreads, timers, write_size);
+    timerProfiler = Timer(profiler.name, [])
+    saveCall = Call(name='save', arguments=[nthreads, timerProfiler, write_size]) #save(nthreads, timers, write_size);
 
     symbs = FindSymbols("symbolics").visit(iet_body)
     dims = FindSymbols("dimensions").visit(iet_body)
@@ -131,7 +133,7 @@ def _ooc_build(iet_body, nthreads):
 
     writeSection = write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uStencil.symbolic_shape[1])
     
-    saveCallable = save_build(nthreads, write_size)
+    saveCallable = save_build(nthreads, timerProfiler, write_size)
     
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, iDim)
 
@@ -223,8 +225,7 @@ def open_threads_build(nthreads, filesArray, iSymbol, iDim):
     return callable
 
 
-def save_build(nthreads, write_size):
-    
+def save_build(nthreads, timerProfiler, write_size):
     printfNodes = []
     pstring = String("'>>>>>>>>>>>>>> FORWARD <<<<<<<<<<<<<<<<<\n'")
     printfNodes.append(Call(name="printf", arguments=[pstring]))
@@ -236,12 +237,13 @@ def save_build(nthreads, write_size):
     ndisksStr = String("NDISKS")
     printfNodes.append(Call(name="printf", arguments=[pstring, ndisksStr]))
 
-    tSec0 = FieldFromPointer("section0", "timers")
-    tSec1 = FieldFromPointer("section1", "timers")
-    tSec2 = FieldFromPointer("section2", "timers")
-    tOpen = FieldFromPointer("open", "timers")
-    tWrite = FieldFromPointer("write", "timers")
-    tClose = FieldFromPointer("close", "timers")
+    # Must retrieve section names from somewhere
+    tSec0 = FieldFromPointer("section0", timerProfiler)
+    tSec1 = FieldFromPointer("section1", timerProfiler)
+    tSec2 = FieldFromPointer("section2", timerProfiler)
+    tOpen = FieldFromPointer("open", timerProfiler)
+    tWrite = FieldFromPointer("write", timerProfiler)
+    tClose = FieldFromPointer("close", timerProfiler)
 
     pstring = String(r"'[FWD] Section0 %.2lf s\n'")
     printfNodes.append(Call(name="printf", arguments=[pstring, tSec0]))
@@ -281,6 +283,6 @@ def save_build(nthreads, write_size):
                                                           tSec0, tSec1, tSec2, tOpen, tWrite, tClose]))
 
     saveCallBody = CallableBody(printfNodes+fileOpenNodes+filePrintNodes)
-    saveCallable = Callable("save", saveCallBody, "void", [nthreads, write_size])
+    saveCallable = Callable("save", saveCallBody, "void", [nthreads, timerProfiler, write_size])
 
     return saveCallable
