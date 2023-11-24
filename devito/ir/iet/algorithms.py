@@ -133,6 +133,8 @@ def _ooc_build(iet_body, nthreads, profiler):
 
     writeSection = write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uStencil.symbolic_shape[1])
     
+    # readSection = read_build()
+    
     saveCallable = save_build(nthreads, timerProfiler, write_size)
     
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, iDim)
@@ -286,3 +288,5 @@ def save_build(nthreads, timerProfiler, write_size):
     saveCallable = Callable("save", saveCallBody, "void", [nthreads, timerProfiler, write_size])
 
     return saveCallable
+
+# def read_build():
