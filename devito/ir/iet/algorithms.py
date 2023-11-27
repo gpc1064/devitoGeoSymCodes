@@ -16,7 +16,7 @@ from devito.ir.equations import IREq, ClusterizedEq
 from devito.symbolics.extended_sympy import FieldFromPointer
 from devito.tools import timed_pass
 from devito.symbolics import (CondEq, CondNe, Macro, String)
-from devito.types import CustomDimension, Array, PointerArray, Symbol, IndexedData, Pointer, FILE, Timer
+from devito.types import CustomDimension, Array, PointerArray, Symbol, IndexedData, Pointer, FILE, Timer, NThreads
 from devito.ir.support import (Interval, IntervalGroup, IterationSpace)
 
 __all__ = ['iet_build']
@@ -73,7 +73,13 @@ def iet_build(stree, **kwargs):
 
 
 @timed_pass(name='ooc_build')
-def _ooc_build(iet_body, nthreads, profiler):
+def _ooc_build(iet_body, nt, profiler):
+    # Creates nthreads parameter representation.
+    # It needs to be created once again in order to enable the ignoreDefinition flag,
+    # avoinding multi definition of nthreads variable.
+    nthreads = NThreads(ignoreDefinition=True)
+
+    
 
     # Build files array
     cdim = [CustomDimension(name="nthreads", symbolic_size=nthreads)]
@@ -108,7 +114,7 @@ def _ooc_build(iet_body, nthreads, profiler):
     cWriteEq = ClusterizedEq(writeEq, ispace=None)
     writeExp = Expression(cWriteEq, None, True)
     
-    timerProfiler = Timer(profiler.name, [])
+    timerProfiler = Timer(profiler.name, [], ignoreDefinition=True)
     saveCall = Call(name='save', arguments=[nthreads, timerProfiler, write_size]) #save(nthreads, timers, write_size);
 
     symbs = FindSymbols("symbolics").visit(iet_body)
@@ -137,7 +143,7 @@ def _ooc_build(iet_body, nthreads, profiler):
     
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, iDim)
 
-    import pdb; pdb.set_trace()
+    #import pdb; pdb.set_trace()
 
     iet_body.insert(0, UExp)
     iet_body.insert(0, floatSizeInit)

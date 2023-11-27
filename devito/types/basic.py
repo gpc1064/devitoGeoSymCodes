@@ -268,6 +268,7 @@ class Basic(CodeSymbol):
 
     # Some other properties
     is_PerfKnob = False  # Does it impact the Operator performance?
+    ignoreDefinition = False
 
     @property
     def bound_symbols(self):
@@ -277,6 +278,11 @@ class Basic(CodeSymbol):
         Operator.
         """
         return set()
+    
+    @classmethod
+    def __ignoreDefinition_setup__(cls, **kwargs):
+        """Extract the value of the ignoreDefinition flag from ``kwargs``."""
+        return kwargs.get('ignoreDefinition', False)
 
 
 class AbstractSymbol(sympy.Symbol, Basic, Pickable, Evaluable):
@@ -349,13 +355,14 @@ class AbstractSymbol(sympy.Symbol, Basic, Pickable, Evaluable):
     def __dtype_setup__(cls, **kwargs):
         """Extract the object data type from ``kwargs``."""
         return kwargs.get('dtype', np.int32)
-
+    
     def __init__(self, *args, **kwargs):
         # no-op, the true init is performed by __init_finalize__
         pass
 
     def __init_finalize__(self, *args, **kwargs):
         self._is_const = kwargs.get('is_const', False)
+        self.ignoreDefinition = self.__ignoreDefinition_setup__(**kwargs)
 
     @property
     def dtype(self):
@@ -510,6 +517,7 @@ class DataSymbol(AbstractSymbol, Uncached):
 
         # Initialization
         newobj._dtype = cls.__dtype_setup__(**kwargs)
+        newobj.ignoreDefinition = cls.__ignoreDefinition_setup__(**kwargs)
         newobj.__init_finalize__(*args, **kwargs)
 
         return newobj

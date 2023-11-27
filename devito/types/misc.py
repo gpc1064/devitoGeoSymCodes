@@ -15,8 +15,8 @@ class Timer(CompositeObject):
 
     __rargs__ = ('name', 'sections')
 
-    def __init__(self, name, sections):
-        super().__init__(name, 'profiler', [(i, c_double) for i in sections])
+    def __init__(self, name, sections, **kwargs):
+        super().__init__(name, 'profiler', [(i, c_double) for i in sections], **kwargs)
 
     def reset(self):
         for i in self.fields:

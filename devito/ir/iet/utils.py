@@ -103,21 +103,22 @@ def derive_parameters(iet, drop_locals=False):
     # Symbols, Objects, etc, become input parameters as well
     basics = FindSymbols('basics').visit(iet)
     candidates.extend(i.function for i in basics)
-
+    
     # Filter off duplicates (e.g., `x_size` is extracted by both calls to FindSymbols)
     candidates = filter_ordered(candidates)
 
     # Filter off symbols which are defined somewhere within `iet`
     defines = [s.name for s in FindSymbols('defines').visit(iet)]
-    parameters = [s for s in candidates if s.name not in defines]
+    parameters = [s for s in candidates if (s.name not in defines and not s.ignoreDefinition)]
 
     # Drop globally-visible objects
     parameters = [p for p in parameters
                   if not isinstance(p, (Global, Keyword, Macro))]
+    
     # Drop (to be) locally declared objects as well as global objects
     parameters = [p for p in parameters
                   if not (p._mem_internal_eager or p._mem_constant)]
-
+    
     # Maybe filter out all other compiler-generated objects
     if drop_locals:
         parameters = [p for p in parameters if not (p.is_ArrayBasic or p.is_LocalObject)]
