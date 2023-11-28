@@ -10,14 +10,13 @@ from functools import reduce
 
 from collections import OrderedDict
 
-from devito.ir.iet import (Expression, Increment, Iteration, List, Conditional, SyncSpot,
-                           Section, HaloSpot, ExpressionBundle, Call, Conditional, CallableBody, Callable, Return, FindSymbols)
+from devito.ir.iet import Expression, Increment, Iteration, List, Conditional, SyncSpot, Section, HaloSpot, ExpressionBundle, Call, Conditional, CallableBody, Callable, Return, FindSymbols
 from devito.ir.equations import IREq, ClusterizedEq
 from devito.symbolics.extended_sympy import FieldFromPointer
 from devito.tools import timed_pass
 from devito.symbolics import (CondEq, CondNe, Macro, String)
 from devito.types import CustomDimension, Array, PointerArray, Symbol, IndexedData, Pointer, FILE, Timer
-from devito.ir.support import (Interval, IntervalGroup, IterationSpace)
+from devito.ir.support import (Interval, IntervalGroup, IterationSpace, Backward)
 
 __all__ = ['iet_build']
 
@@ -78,6 +77,7 @@ def _ooc_build(iet_body, nthreads, profiler):
     # Build files array
     cdim = [CustomDimension(name="nthreads", symbolic_size=nthreads)]
     filesArray = Array(name='files', dimensions=cdim, dtype=np.int32)
+    countersArray = Array(name='counters', dimensions=cdim, dtype=np.int32) # counter definition for read operation
 
     # Test files array 
     pstring = String("'Error to alloc'")
@@ -133,13 +133,15 @@ def _ooc_build(iet_body, nthreads, profiler):
 
     writeSection = write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uStencil.symbolic_shape[1])
     
-    # readSection = read_build()
+    readSection = read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uStencil.symbolic_shape[1], countersArray)
+    
+    import pdb; pdb.set_trace()
     
     saveCallable = save_build(nthreads, timerProfiler, write_size)
     
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, iDim)
-
-    import pdb; pdb.set_trace()
+    
+    
 
     iet_body.insert(0, UExp)
     iet_body.insert(0, floatSizeInit)
@@ -166,7 +168,7 @@ def write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1):
     ret = Symbol(name="ret", dtype=np.int32)
     retEq = IREq(ret, 0)
     cRetEq = ClusterizedEq(retEq, ispace=ispace)
-    itNodes.append(Expression(cRetEq, None, True))
+    itNodes.append(Expression(cRetEq, None, True)) # isso e mesmo necessario? int ret = 0;
 
     writeCall = Call(name="write", arguments=[filesArray[tid], uStencil[t0, iSymbol], u_size], retobj=ret)
     itNodes.append(writeCall)
@@ -184,7 +186,62 @@ def write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1):
     return Section("write", writeIteration)
 
     
+def read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1, counters):
+    
+    
+    #  0 <= i <= u_vec->size[1]-1
+    iDim = CustomDimension(name="i", symbolic_size=uVecSize1)
+    interval = Interval(iDim, 0, uVecSize1)
+    intervalGroup = IntervalGroup((interval))
+    ispace = IterationSpace(intervalGroup)
+    itNodes = []
 
+    # int tid = i%nthreads;
+    tid = Symbol(name="tid", dtype=np.int32)
+    tidEq = IREq(tid, Mod(iSymbol, nthreads))
+    cTidEq = ClusterizedEq(tidEq, ispace=ispace)
+    itNodes.append(Expression(cTidEq, None, True))
+    
+    # off_t offset = counters[tid] * u_size;
+    # lseek(files[tid], -1 * offset, SEEK_END);
+    offset = Symbol(name="offset", dtype=np.int32)
+    SEEK_END = Symbol(name="SEEK_END", dtype=np.int32)
+    offsetEq = IREq(offset, (-1)*counters[tid]*u_size)
+    cOffsetEq = ClusterizedEq(offsetEq, ispace=ispace)
+    itNodes.append(Expression(cOffsetEq, None, True))    
+    itNodes.append(Call(name="lseek", arguments=[filesArray[tid], offset]))
+
+    # int ret = read(files[tid], u[t0][i], u_size);
+    ret = Symbol(name="ret", dtype=np.int32)
+    # retEq = IREq(ret, 0)
+    # cRetEq = ClusterizedEq(retEq, ispace=ispace)
+    # itNodes.append(Expression(cRetEq, None, True)) # isso e mesmo necessario? int ret = 0;
+    readCall = Call(name="read", arguments=[filesArray[tid], uStencil[t0, iSymbol], u_size], retobj=ret)
+    itNodes.append(readCall)
+
+    # printf("%d", ret);
+    # perror("Cannot open output file");
+    # exit(1);
+    pret = String("'%d', ret")
+    pstring = String("'Cannot open output file'")
+    condNodes = [
+        Call(name="printf", arguments=pret),
+        Call(name="perror", arguments=pstring), 
+        Call(name="exit", arguments=1)
+    ]
+    cond = Conditional(CondNe(ret, u_size), condNodes) # if (ret != u_size)
+    itNodes.append(cond)
+    
+    # newOffsetEq = IREq(counters_tid, counters[tid]+1)
+    # cNewOffsetEq = ClusterizedEq(newOffsetEq, ispace=ispace)
+    import pdb; pdb.set_trace()
+    itNodes.append(Increment(counters[tid]))
+
+    iDim = CustomDimension(name="i", symbolic_size=uVecSize1)
+    pragma = cgen.Pragma("omp parallel for schedule(static,1) num_threads(nthreads)")    
+    readIteration = Iteration(itNodes, iDim, uVecSize1-1, direction=Backward, pragmas=[pragma])
+
+    return Section("read", readIteration)
 
 def open_threads_build(nthreads, filesArray, iSymbol, iDim):
     nvme_id = Symbol(name="nvme_id", dtype=np.int32)
@@ -288,5 +345,3 @@ def save_build(nthreads, timerProfiler, write_size):
     saveCallable = Callable("save", saveCallBody, "void", [nthreads, timerProfiler, write_size])
 
     return saveCallable
-
-# def read_build():
