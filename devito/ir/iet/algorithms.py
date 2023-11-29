@@ -188,7 +188,6 @@ def write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1):
     
 def read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1, counters):
     
-    
     #  0 <= i <= u_vec->size[1]-1
     iDim = CustomDimension(name="i", symbolic_size=uVecSize1)
     interval = Interval(iDim, 0, uVecSize1)
@@ -207,9 +206,10 @@ def read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1, c
     offset = Symbol(name="offset", dtype=np.int32)
     SEEK_END = Symbol(name="SEEK_END", dtype=np.int32)
     offsetEq = IREq(offset, (-1)*counters[tid]*u_size)
+    # SEEK_ENDEq = IREq(SEEK_END, 2)
     cOffsetEq = ClusterizedEq(offsetEq, ispace=ispace)
     itNodes.append(Expression(cOffsetEq, None, True))    
-    itNodes.append(Call(name="lseek", arguments=[filesArray[tid], offset]))
+    itNodes.append(Call(name="lseek", arguments=[filesArray[tid], offset, SEEK_END]))
 
     # int ret = read(files[tid], u[t0][i], u_size);
     ret = Symbol(name="ret", dtype=np.int32)
@@ -232,10 +232,11 @@ def read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1, c
     cond = Conditional(CondNe(ret, u_size), condNodes) # if (ret != u_size)
     itNodes.append(cond)
     
-    # newOffsetEq = IREq(counters_tid, counters[tid]+1)
-    # cNewOffsetEq = ClusterizedEq(newOffsetEq, ispace=ispace)
-    import pdb; pdb.set_trace()
-    itNodes.append(Increment(counters[tid]))
+    # counters[tid] = counters[tid] + 1
+    newCounters = Symbol(name="counters[tid]", dtype=np.int32)
+    newCountersEq = IREq(newCounters, counters[tid]+1)
+    cNewCountersEq = ClusterizedEq(newCountersEq, ispace=ispace)
+    itNodes.append(Expression(cNewCountersEq, None, False))
 
     iDim = CustomDimension(name="i", symbolic_size=uVecSize1)
     pragma = cgen.Pragma("omp parallel for schedule(static,1) num_threads(nthreads)")    
