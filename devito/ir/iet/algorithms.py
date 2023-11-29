@@ -135,17 +135,16 @@ def _ooc_build(iet_body, nthreads, profiler):
     
     readSection = read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uStencil.symbolic_shape[1], countersArray)
     
-    import pdb; pdb.set_trace()
-    
     saveCallable = save_build(nthreads, timerProfiler, write_size)
     
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, iDim)
     
-    
+    import pdb; pdb.set_trace()
 
     iet_body.insert(0, UExp)
     iet_body.insert(0, floatSizeInit)
     iet_body.insert(0, sec)
+    iet_body.insert(0, readSection)
     iet_body.append(closeSec)
     iet_body.append(writeSection)
     iet_body.append(writeExp)
@@ -203,10 +202,10 @@ def read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1, c
     
     # off_t offset = counters[tid] * u_size;
     # lseek(files[tid], -1 * offset, SEEK_END);
+    # TODO: make offset be a off_t
     offset = Symbol(name="offset", dtype=np.int32)
-    SEEK_END = Symbol(name="SEEK_END", dtype=np.int32)
+    SEEK_END = String("SEEK_END")
     offsetEq = IREq(offset, (-1)*counters[tid]*u_size)
-    # SEEK_ENDEq = IREq(SEEK_END, 2)
     cOffsetEq = ClusterizedEq(offsetEq, ispace=ispace)
     itNodes.append(Expression(cOffsetEq, None, True))    
     itNodes.append(Call(name="lseek", arguments=[filesArray[tid], offset, SEEK_END]))
@@ -233,6 +232,7 @@ def read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1, c
     itNodes.append(cond)
     
     # counters[tid] = counters[tid] + 1
+    # TODO: It keeps initializing counters[tid] as a int. Fix that
     newCounters = Symbol(name="counters[tid]", dtype=np.int32)
     newCountersEq = IREq(newCounters, counters[tid]+1)
     cNewCountersEq = ClusterizedEq(newCountersEq, ispace=ispace)
