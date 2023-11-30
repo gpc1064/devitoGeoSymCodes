@@ -145,9 +145,9 @@ def _ooc_build(iet_body, nt, profiler):
     # The following sections were coded based on offloading-to-nvme/src/non-mpi/gradient.c
     readSection = read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uStencil.symbolic_shape[1], countersArray)
     
-    closeSection = close_build(nthreads, filesArray, iSymbol)
+    closeSection = close_build(nthreads, filesArray, iSymbol, iDim)
 
-    #import pdb; pdb.set_trace()
+    import pdb; pdb.set_trace()
 
     iet_body.insert(0, UExp)
     iet_body.insert(0, floatSizeInit)
@@ -266,7 +266,7 @@ def read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1, c
 
     return section
 
-def close_build(nthreads, filesArray, iSymbol):
+def close_build(nthreads, filesArray, iSymbol, iDim):
     """
     This method inteds to code gradient.c close section.
     Obs: maybe the desciption of the variables should be better
@@ -279,10 +279,7 @@ def close_build(nthreads, filesArray, iSymbol):
     Returns:
         section (Section): complete close section
     """
-    
-    # int i=0; i < nthreads; i++
-    iDim = CustomDimension(name="i", symbolic_size=nthreads)
-    
+
     # close(files[i]);
     itNode = Call(name="close", arguments=[filesArray[iSymbol]])    
     
