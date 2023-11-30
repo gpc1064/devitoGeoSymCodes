@@ -79,8 +79,6 @@ def _ooc_build(iet_body, nt, profiler):
     # avoinding multi definition of nthreads variable.
     nthreads = NThreads(ignoreDefinition=True)
 
-    
-
     # Build files array
     cdim = [CustomDimension(name="nthreads", symbolic_size=nthreads)]
     filesArray = Array(name='files', dimensions=cdim, dtype=np.int32)
@@ -168,10 +166,6 @@ def write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1):
     itNodes.append(Expression(cTidEq, None, True))
     
     ret = Symbol(name="ret", dtype=np.int32)
-    retEq = IREq(ret, 0)
-    cRetEq = ClusterizedEq(retEq, ispace=ispace)
-    itNodes.append(Expression(cRetEq, None, True))
-
     writeCall = Call(name="write", arguments=[filesArray[tid], uStencil[t0, iSymbol], u_size], retobj=ret)
     itNodes.append(writeCall)
 
@@ -188,7 +182,6 @@ def write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1):
     return Section("write", writeIteration)
 
     
-
 
 def open_threads_build(nthreads, filesArray, iSymbol, iDim):
     nvme_id = Symbol(name="nvme_id", dtype=np.int32)

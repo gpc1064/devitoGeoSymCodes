@@ -320,6 +320,7 @@ def make_mpi(iet, mpimode=None, **kwargs):
                 mapper.update({n: n._rebuild(properties=set(n.properties)-{PARALLEL})
                                for n in tree[:tree.index(i)+1]})
                 break
+    
     iet = Transformer(mapper, nested=True).visit(iet)
 
     return iet, {'includes': ['mpi.h'], 'efuncs': efuncs}

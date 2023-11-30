@@ -11,8 +11,11 @@ from devito.passes.iet.engine import iet_pass
 from devito.symbolics import evalrel, has_integer_args
 from devito.tools import as_mapper, split
 
+from devito.ir.iet import (Call, CallableBody, Callable)
+from devito.symbolics import String
+
 __all__ = ['avoid_denormals', 'hoist_prodders', 'relax_incr_dimensions',
-           'generate_macros', 'minimize_symbols']
+           'generate_macros', 'minimize_symbols', 'ooc_efuncs']
 
 
 @iet_pass
@@ -198,3 +201,19 @@ def remove_redundant_moddims(iet):
     iet = Uxreplace(subs0).visit(iet)
 
     return iet
+
+def saveB():
+    printfNodes = []
+    pstring = String("'>>>>>>>>>>>>>> FORWARD <<<<<<<<<<<<<<<<<\n'")
+    printfNodes.append(Call(name="printf", arguments=[pstring]))
+
+    saveCallBody = CallableBody(printfNodes)
+    saveCallable = Callable("save", saveCallBody, "void", [])
+
+    return saveCallable
+
+@iet_pass
+def ooc_efuncs(iet, **kwargs):
+    saveCallable = saveB()
+    efuncs=[saveCallable]
+    return iet, {'includes': [], 'efuncs': efuncs}
