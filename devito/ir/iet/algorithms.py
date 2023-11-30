@@ -133,11 +133,14 @@ def _ooc_build(iet_body, nthreads, profiler):
 
     writeSection = write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uStencil.symbolic_shape[1])
     
-    readSection = read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uStencil.symbolic_shape[1], countersArray)
-    
     saveCallable = save_build(nthreads, timerProfiler, write_size)
     
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, iDim)
+    
+    # The following sections were coded based on offloading-to-nvme/src/non-mpi/gradient.c
+    readSection = read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uStencil.symbolic_shape[1], countersArray)
+    
+    closeSection = close_build(nthreads, filesArray, iSymbol)
     
     import pdb; pdb.set_trace()
 
@@ -186,8 +189,27 @@ def write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1):
 
     
 def read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1, counters):
+    """
+    This method inteds to code gradient.c read section.
+    Obs: maybe the desciption of the variables should be better    
+
+    Args:
+        nthreads (NThreads): symbol of number of threads
+        filesArray (files): pointer of allocated memory of nthreads dimension. Each place has a size of int
+        iSymbol (Symbol): symbol of the iterator index i
+        u_size (Symbol): the uStencil size
+        uStencil (u): a stencil we call u
+        t0 (ModuloDimension): time t0
+        uVecSize1 (FieldFromPointer): size of a vector u
+        counters (array): pointer of allocated memory of nthreads dimension. Each place has a size of int
+
+    Returns:
+        section (Section): complete read section
+    """
     
+    #  pragma omp parallel for schedule(static,1) num_threads(nthreads)
     #  0 <= i <= u_vec->size[1]-1
+    pragma = cgen.Pragma("omp parallel for schedule(static,1) num_threads(nthreads)")
     iDim = CustomDimension(name="i", symbolic_size=uVecSize1)
     interval = Interval(iDim, 0, uVecSize1)
     intervalGroup = IntervalGroup((interval))
@@ -232,17 +254,44 @@ def read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1, c
     itNodes.append(cond)
     
     # counters[tid] = counters[tid] + 1
-    # TODO: It keeps initializing counters[tid] as a int. Fix that
+    # TODO: It keeps initializing counters[tid] as an int. Fix that
     newCounters = Symbol(name="counters[tid]", dtype=np.int32)
     newCountersEq = IREq(newCounters, counters[tid]+1)
     cNewCountersEq = ClusterizedEq(newCountersEq, ispace=ispace)
     itNodes.append(Expression(cNewCountersEq, None, False))
-
-    iDim = CustomDimension(name="i", symbolic_size=uVecSize1)
-    pragma = cgen.Pragma("omp parallel for schedule(static,1) num_threads(nthreads)")    
+        
     readIteration = Iteration(itNodes, iDim, uVecSize1-1, direction=Backward, pragmas=[pragma])
+    
+    section = Section("read", readIteration)
 
-    return Section("read", readIteration)
+    return section
+
+def close_build(nthreads, filesArray, iSymbol):
+    """
+    This method inteds to code gradient.c close section.
+    Obs: maybe the desciption of the variables should be better
+
+    Args:
+        nthreads (NThreads): symbol of number of threads
+        filesArray (files): pointer of allocated memory of nthreads dimension. Each place has a size of int
+        iSymbol (Symbol): symbol of the iterator index i
+
+    Returns:
+        section (Section): complete close section
+    """
+    
+    # int i=0; i < nthreads; i++
+    iDim = CustomDimension(name="i", symbolic_size=nthreads)
+    
+    # close(files[i]);
+    itNode = Call(name="close", arguments=[filesArray[iSymbol]])    
+    
+    # for(int i=0; i < nthreads; i++) --> for(int i=0; i <= nthreads-1; i+=1)
+    closeIteration = Iteration(itNode, iDim, nthreads-1)
+    
+    section = Section("close", closeIteration)
+    
+    return section
 
 def open_threads_build(nthreads, filesArray, iSymbol, iDim):
     nvme_id = Symbol(name="nvme_id", dtype=np.int32)
