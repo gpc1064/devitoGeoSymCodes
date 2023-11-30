@@ -78,30 +78,18 @@ def _ooc_build(iet_body, nt, profiler):
     # It needs to be created once again in order to enable the ignoreDefinition flag,
     # avoinding multi definition of nthreads variable.
     nthreads = NThreads(ignoreDefinition=True)
+    
+    # For now, this boolean decides what operator is to be processed in open section
+    is_Forward = False
+    
+    # Custom dimension and symbol for iteration spaces
+    iDim = CustomDimension(name="i", symbolic_size=nthreads)    
+    iSymbol = Symbol(name="i", dtype=np.int32)
 
-    # Build files array
+    # Build files and counters arrays
     cdim = [CustomDimension(name="nthreads", symbolic_size=nthreads)]
     filesArray = Array(name='files', dimensions=cdim, dtype=np.int32)
     countersArray = Array(name='counters', dimensions=cdim, dtype=np.int32) # counter definition for read operation
-
-    # Test files array 
-    pstring = String("'Error to alloc'")
-    printfCall = Call(name="printf", arguments=pstring)
-    exitCall = Call(name="exit", arguments=1)
-    arrCond = Conditional(CondEq(filesArray, Macro('NULL')), [printfCall, exitCall])
-
-    #Call open_thread_files
-    open_thread_call = Call(name='open_thread_files', arguments=[filesArray, nthreads])
-
-    # Build open section
-    sec = Section("open", [arrCond, open_thread_call])
-
-    # Close files array
-    iSymbol = Symbol(name="i", dtype=np.int32)
-    # closeCall = Call(name="close", arguments=filesArray[iSymbol])
-    iDim = CustomDimension(name="i", symbolic_size=nthreads)
-    # closeFilesIteration = Iteration(closeCall, iDim, nthreads - 1)
-    # closeSec = Section("close", closeFilesIteration)
 
     # Build write_size var
     write_size = Symbol(name="write_size", dtype=np.int64)
@@ -135,6 +123,8 @@ def _ooc_build(iet_body, nt, profiler):
     UEq = IREq(u_size, (reduce(lambda x, y: x * y, sizes) * floatSize))
     cUEq = ClusterizedEq(UEq, ispace=None)
     UExp = Expression(cUEq, None, True)
+    
+    openSection = open_build(filesArray, countersArray, iDim, nthreads, is_Forward)
 
     writeSection = write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uStencil.symbolic_shape[1])
     
@@ -151,7 +141,7 @@ def _ooc_build(iet_body, nt, profiler):
 
     iet_body.insert(0, UExp)
     iet_body.insert(0, floatSizeInit)
-    iet_body.insert(0, sec)
+    iet_body.insert(0, openSection)
     iet_body.insert(0, readSection)
     iet_body.append(closeSection)
     iet_body.append(writeSection)
@@ -159,6 +149,29 @@ def _ooc_build(iet_body, nt, profiler):
     iet_body.append(saveCall)
 
     return iet_body
+
+def open_build(filesArray, countersArray, iDim, nthreads, is_Forward):
+    
+    # Test files array and exit if get wrong
+    filesArrCond = array_alloc_check(filesArray) #  Forward
+    
+    #Call open_thread_files
+    open_thread_call = Call(name='open_thread_files', arguments=[filesArray, nthreads])
+
+    # Open section body
+    body = [filesArrCond, open_thread_call]
+    
+    if not is_Forward:
+        countersArrCond = array_alloc_check(countersArray) # gradient
+        body.append(countersArrCond)
+        
+        intervalGroup = IntervalGroup((Interval(iDim, 0, nthreads)))
+        newCounters = Symbol(name="counters[i]", dtype=np.int32)
+        cNewCountersEq = ClusterizedEq(IREq(newCounters, 1), ispace=IterationSpace(intervalGroup))
+        openIterationGrad = Iteration(Expression(cNewCountersEq, None, False), iDim, nthreads-1)
+        body.append(openIterationGrad)
+        
+    return Section("open", body)
 
 def write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1):
     iDim = CustomDimension(name="i", symbolic_size=uVecSize1)
@@ -289,6 +302,23 @@ def close_build(nthreads, filesArray, iSymbol, iDim):
     section = Section("close", closeIteration)
     
     return section
+
+def array_alloc_check(array):
+    """
+    Checks wether malloc worked for array allocation.
+
+    Args:
+        array (Array): array (files or counters)
+
+    Returns:
+        Conditional: condition to handle allocated array
+    """
+    
+    pstring = String("'Error to alloc'")
+    printfCall = Call(name="printf", arguments=pstring)
+    exitCall = Call(name="exit", arguments=1)
+    return Conditional(CondEq(array, Macro('NULL')), [printfCall, exitCall])
+    
 
 def open_threads_build(nthreads, filesArray, iSymbol, iDim):
     nvme_id = Symbol(name="nvme_id", dtype=np.int32)
