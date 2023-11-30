@@ -93,10 +93,10 @@ def _ooc_build(iet_body, nthreads, profiler):
 
     # Close files array
     iSymbol = Symbol(name="i", dtype=np.int32)
-    closeCall = Call(name="close", arguments=filesArray[iSymbol])
-    iDim = CustomDimension(name="i", symbolic_size=nthreads)
-    closeFilesIteration = Iteration(closeCall, iDim, nthreads - 1)
-    closeSec = Section("close", closeFilesIteration)
+    # closeCall = Call(name="close", arguments=filesArray[iSymbol])
+    # iDim = CustomDimension(name="i", symbolic_size=nthreads)
+    # closeFilesIteration = Iteration(closeCall, iDim, nthreads - 1)
+    # closeSec = Section("close", closeFilesIteration)
 
     # Build write_size var
     write_size = Symbol(name="write_size", dtype=np.int64)
@@ -148,7 +148,7 @@ def _ooc_build(iet_body, nthreads, profiler):
     iet_body.insert(0, floatSizeInit)
     iet_body.insert(0, sec)
     iet_body.insert(0, readSection)
-    iet_body.append(closeSec)
+    iet_body.append(closeSection)
     iet_body.append(writeSection)
     iet_body.append(writeExp)
     iet_body.append(saveCall)
