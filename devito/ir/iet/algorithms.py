@@ -151,6 +151,19 @@ def _ooc_build(iet_body, nt, profiler):
     return iet_body
 
 def open_build(filesArray, countersArray, iDim, nthreads, is_Forward):
+    """
+    This method inteds to code open section for both Forward and Gradient operators.
+    
+    Args:
+        filesArray (files): pointer of allocated memory of nthreads dimension. Each place has a size of int
+        countersArray (counters): pointer of allocated memory of nthreads dimension. Each place has a size of int
+        iDim (CustomDimension): dimension i from 0 to nthreads 
+        nthreads (NThreads): number of threads
+        is_Forward (bool): boolean to Forward or Gradient operator
+
+    Returns:
+        Section: open section
+    """
     
     # Test files array and exit if get wrong
     filesArrCond = array_alloc_check(filesArray) #  Forward
@@ -288,6 +301,7 @@ def close_build(nthreads, filesArray, iSymbol, iDim):
         nthreads (NThreads): symbol of number of threads
         filesArray (files): pointer of allocated memory of nthreads dimension. Each place has a size of int
         iSymbol (Symbol): symbol of the iterator index i
+        iDim (CustomDimension): dimension i from 0 to nthreads
 
     Returns:
         section (Section): complete close section
