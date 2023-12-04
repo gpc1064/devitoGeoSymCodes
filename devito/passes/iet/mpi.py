@@ -296,6 +296,7 @@ def make_mpi(iet, mpimode=None, **kwargs):
     distributed-memory parallelism.
     """
     # To produce unique object names
+    print("\n\n\n\==>MAKE MPI<==\\n\n")
     generators = {'msg': generator(), 'comm': generator(), 'comp': generator()}
 
     sync_heb = HaloExchangeBuilder('basic', generators, **kwargs)
@@ -345,4 +346,5 @@ def mpiize(graph, **kwargs):
 
     mpimode = options['mpi']
     if mpimode:
+        import pdb; pdb.set_trace()
         make_mpi(graph, mpimode=mpimode, **kwargs)

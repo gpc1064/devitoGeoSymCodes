@@ -11,12 +11,12 @@ from functools import reduce
 from collections import OrderedDict
 
 from devito.ir.iet import (Expression, Increment, Iteration, List, Conditional, SyncSpot,
-                           Section, HaloSpot, ExpressionBundle, Call, Conditional, CallableBody, Callable, Return, FindSymbols)
+                           Section, HaloSpot, ExpressionBundle, Call, Conditional, CallableBody, Callable, Return, FindSymbols, FindNodes, Transformer)
 from devito.ir.equations import IREq, ClusterizedEq
 from devito.symbolics.extended_sympy import FieldFromPointer
 from devito.tools import timed_pass
 from devito.symbolics import (CondEq, CondNe, Macro, String)
-from devito.types import CustomDimension, Array, PointerArray, Symbol, IndexedData, Pointer, FILE, Timer, NThreads
+from devito.types import CustomDimension, Array, PointerArray, Symbol, IndexedData, Pointer, FILE, Timer, NThreads, TimeDimension
 from devito.ir.support import (Interval, IntervalGroup, IterationSpace)
 
 __all__ = ['iet_build']
@@ -54,7 +54,11 @@ def iet_build(stree, **kwargs):
             body = Conditional(i.guard, queues.pop(i))
 
         elif i.is_Iteration:
-            body = Iteration(queues.pop(i), i.dim, i.limits, direction=i.direction,
+            iteration_nodes = [queues.pop(i)]
+            if isinstance(i.dim, TimeDimension) and out_of_core:
+                iteration_nodes.append(Section("write_temp"))
+
+            body = Iteration(iteration_nodes, i.dim, i.limits, direction=i.direction,
                              properties=i.properties, uindices=i.sub_iterators)
 
         elif i.is_Section:
@@ -136,18 +140,23 @@ def _ooc_build(iet_body, nt, profiler):
     UExp = Expression(cUEq, None, True)
 
     writeSection = write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uStencil.symbolic_shape[1])
-    
+
+    sections = FindNodes(Section).visit(iet_body)
+    tempWriteSec = next((section for section in sections if section.name == 'write_temp'), None)
+    mapper={tempWriteSec: writeSection}
+
+    timeIndex = next((i for i, node in enumerate(iet_body) if isinstance(node, Iteration) and isinstance(node.dim, TimeDimension)), None)
+    transformedIet = Transformer(mapper).visit(iet_body[timeIndex])
+    iet_body[timeIndex] = transformedIet
+
     saveCallable = save_build(nthreads, timerProfiler, write_size)
     
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, iDim)
-
-    #import pdb; pdb.set_trace()
 
     iet_body.insert(0, UExp)
     iet_body.insert(0, floatSizeInit)
     iet_body.insert(0, sec)
     iet_body.append(closeSec)
-    iet_body.append(writeSection)
     iet_body.append(writeExp)
     iet_body.append(saveCall)
 
