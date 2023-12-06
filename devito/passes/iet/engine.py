@@ -69,7 +69,7 @@ class Graph(object):
                 compiler.add_library_dirs(as_tuple(metadata.get('lib_dirs')))
             except KeyError:
                 pass
-
+            
             if efunc is self.efuncs[i]:
                 continue
 
@@ -114,24 +114,16 @@ def iet_pass(func):
 
     @wraps(func)
     def wrapper(*args, **kwargs):
-        #print("\n\nfunc, args and kwargs:")
-        #print(func)
-        #print(args)
-        #print(kwargs)
         if timed_pass.is_enabled():
-            #print("timed_pass enabled")
             maybe_timed = timed_pass
         else:
-            #print("timed_pass disabled")
             maybe_timed = lambda func, name: func
         try:
             # Pure function case
-            #print("pure function")
             graph, = args
             return maybe_timed(call(graph), func.__name__)(func, **kwargs)
         except ValueError:
             # Instance method case
-            #print("instance method")
             self, graph = args
             return maybe_timed(call(graph), func.__name__)(partial(func, self), **kwargs)
     return wrapper

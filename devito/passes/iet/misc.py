@@ -2,6 +2,7 @@ from functools import singledispatch
 
 import cgen
 import sympy
+import numpy as np
 
 from devito.finite_differences import Max, Min
 from devito.ir import (Any, Forward, Iteration, List, Prodder, FindApplications,
@@ -13,6 +14,7 @@ from devito.tools import as_mapper, split
 
 from devito.ir.iet import (Call, CallableBody, Callable)
 from devito.symbolics import String
+from devito.types import CustomDimension, Array, Symbol
 
 __all__ = ['avoid_denormals', 'hoist_prodders', 'relax_incr_dimensions',
            'generate_macros', 'minimize_symbols', 'ooc_efuncs']
@@ -203,17 +205,30 @@ def remove_redundant_moddims(iet):
     return iet
 
 def saveB():
-    printfNodes = []
+    nodes = []
     pstring = String("'>>>>>>>>>>>>>> FORWARD <<<<<<<<<<<<<<<<<\n'")
-    printfNodes.append(Call(name="printf", arguments=[pstring]))
+    nodes.append(Call(name="printf", arguments=[pstring]))
 
-    saveCallBody = CallableBody(printfNodes)
-    saveCallable = Callable("save", saveCallBody, "void", [])
+    nameDim = [CustomDimension(name="nameDim", symbolic_size=100)]
+    nameArray = Array(name='name', dimensions=nameDim, dtype=np.byte)
+
+    nvme_id = Symbol(name='nvme_id', dtype=np.int32)
+    pstring = String(r"'data/nvme%d/thread_%d.data'")
+    nodes.append(Call(name="sprintf", arguments=[nameArray, pstring, nvme_id]))
+
+    saveCallBody = CallableBody(nodes)
+    saveCallable = Callable("saveData", saveCallBody, "void", [])
 
     return saveCallable
 
 @iet_pass
 def ooc_efuncs(iet, **kwargs):
     saveCallable = saveB()
+
+    new_save_call = Call(name="saveData", arguments=[])
+    calls = FindNodes(Call).visit(iet)
+    save_call = next((call for call in calls if call.name == 'save'), None)
+    mapper={save_call: new_save_call}
+    iet = Transformer(mapper).visit(iet)
     efuncs=[saveCallable]
-    return iet, {'includes': [], 'efuncs': efuncs}
+    return iet, {'efuncs': efuncs}

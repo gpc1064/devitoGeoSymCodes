@@ -85,13 +85,6 @@ class timed_pass(object):
 
         stack.pop()
 
-        if self.name and self.name == "make_mpi":
-            print("\n\n self.name and args \n\n")
-            print(self.name)
-            print(self.func)
-            print(args)
-            print(retval)
-            import pdb; pdb.set_trace()
         return retval
 
     def __repr__(self):

@@ -17,7 +17,7 @@ from devito.symbolics.extended_sympy import FieldFromPointer
 from devito.tools import timed_pass
 from devito.symbolics import (CondEq, CondNe, Macro, String)
 from devito.types import CustomDimension, Array, PointerArray, Symbol, IndexedData, Pointer, FILE, Timer, NThreads, TimeDimension
-from devito.ir.support import (Interval, IntervalGroup, IterationSpace, Backward)
+from devito.ir.support import (Interval, IntervalGroup, IterationSpace, Backward, PARALLEL, AFFINE)
 
 
 __all__ = ['iet_build']
@@ -114,7 +114,7 @@ def _ooc_build(iet_body, nt, profiler, out_of_core):
     sizeExp = Expression(cSizeEq, None, True)
     
     timerProfiler = Timer(profiler.name, [], ignoreDefinition=True)
-    saveCall = Call(name='save', arguments=[nthreads, timerProfiler, size]) #save(nthreads, timers, write_size);
+    saveCall = Call(name='save', arguments=[nthreads, timerProfiler, size])
 
     symbs = FindSymbols("symbolics").visit(iet_body)
     dims = FindSymbols("dimensions").visit(iet_body)
