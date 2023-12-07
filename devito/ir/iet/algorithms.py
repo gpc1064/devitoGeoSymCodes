@@ -1,24 +1,19 @@
 import numpy as np
-
 import ctypes as ct
-
 import cgen
-
 from sympy import Mod
 
 from functools import reduce
-
 from collections import OrderedDict
 
-from devito.ir.iet import (Expression, Increment, Iteration, List, Conditional, SyncSpot,
-                           Section, HaloSpot, ExpressionBundle, Call, Conditional, CallableBody, Callable, Return, FindSymbols, FindNodes, Transformer)
-from devito.ir.equations import IREq, ClusterizedEq, OpInc
-from devito.symbolics.extended_sympy import FieldFromPointer
 from devito.tools import timed_pass
 from devito.symbolics import (CondEq, CondNe, Macro, String)
-from devito.types import CustomDimension, Array, PointerArray, Symbol, IndexedData, Pointer, FILE, Timer, NThreads, TimeDimension
+from devito.symbolics.extended_sympy import FieldFromPointer
+from devito.types import CustomDimension, Array, Symbol, Pointer, FILE, Timer, NThreads, TimeDimension
+from devito.ir.iet import (Expression, Increment, Iteration, List, Conditional, SyncSpot,
+                           Section, HaloSpot, ExpressionBundle, Call, Conditional, CallableBody, Callable, FindSymbols, FindNodes, Transformer)
+from devito.ir.equations import IREq, ClusterizedEq
 from devito.ir.support import (Interval, IntervalGroup, IterationSpace, Backward, PARALLEL, AFFINE)
-
 
 __all__ = ['iet_build']
 
@@ -81,88 +76,76 @@ def iet_build(stree, **kwargs):
 
 @timed_pass(name='ooc_build')
 def _ooc_build(iet_body, nt, profiler, out_of_core):
-    # Creates nthreads parameter representation.
-    # It needs to be created once again in order to enable the ignoreDefinition flag,
-    # avoinding multi definition of nthreads variable.
+    # Creates nthreads once again in order to enable the ignoreDefinition flag
     nthreads = NThreads(ignoreDefinition=True)
     
     is_forward = out_of_core == 'forward'
 
-    # Custom dimension and symbol for iteration spaces
-    iDim = CustomDimension(name="i", symbolic_size=nthreads)    
+    ######## Dimension and symbol for iteration spaces ########
+    nthreadsDim = CustomDimension(name="i", symbolic_size=nthreads)    
     iSymbol = Symbol(name="i", dtype=np.int32)
 
-    # Build files and counters arrays
-    cdim = [CustomDimension(name="nthreads", symbolic_size=nthreads)]
-    filesArray = Array(name='files', dimensions=cdim, dtype=np.int32)
-    countersArray = Array(name='counters', dimensions=cdim, dtype=np.int32) # counter definition for read operation
 
-    # Build write_size var
-    time_M = Symbol(name="time_M", dtype=np.int32)
-    time_m = Symbol(name="time_m", dtype=np.int32)
-    u_vecSize1 = FieldFromPointer("size[1]", "u_vec")
-    u_size = Symbol(name="u_size", dtype=np.int32)
-    
-    if is_forward:
-        size_name="write_size"
-    else:
-        size_name="read_size"
-        
-    size = Symbol(name=size_name, dtype=np.int64)
-    sizeEq = IREq(size, ((time_M - time_m+1) * u_vecSize1 * u_size))
-    cSizeEq = ClusterizedEq(sizeEq, ispace=None)
-    sizeExp = Expression(cSizeEq, None, True)
-    
-    timerProfiler = Timer(profiler.name, [], ignoreDefinition=True)
-    saveCall = Call(name='save', arguments=[nthreads, timerProfiler, size])
+    ######## Build files and counters arrays ########
+    filesArray = Array(name='files', dimensions=[nthreadsDim], dtype=np.int32)
+    countersArray = Array(name='counters', dimensions=[nthreadsDim], dtype=np.int32)
 
+
+    ######## Build open section ########
+    openSection = open_build(filesArray, countersArray, nthreadsDim, nthreads, is_forward, iSymbol)
+    
+
+    ######## Build func_size var ########
     symbs = FindSymbols("symbolics").visit(iet_body)
+    # TODO: Function name must come from user?
+    funcStencil = next((symb for symb in symbs if symb.name == "u"), None)
+    # TODO: Function name must come from user?
+    func_size = Symbol(name="u_size", dtype=np.uint64) 
+    
+    funcSizeExp, floatSizeInit = func_size_build(funcStencil, func_size)
+
+    
+    ######## Build write/read section ########
     dims = FindSymbols("dimensions").visit(iet_body)
-    basics = FindSymbols("basics").visit(iet_body)
-    bases = FindSymbols("indexedbases").visit(iet_body)
-    defs = FindSymbols("defines").visit(iet_body)
-    globals = FindSymbols("globals").visit(iet_body)
-
-    uStencil = next((symb for symb in symbs if symb.name == "u"), None)
     t0 = next((dim for dim in dims if dim.name == "t0"), None)
+    write_or_read_build(iet_body, is_forward, nthreads, filesArray, iSymbol, func_size, funcStencil, t0, countersArray)
     
-    floatSize = Symbol(name="float_size", dtype=np.uint64)
-    floatString = String(r"float")
-    floatSizeInit = Call(name="sizeof", arguments=[floatString], retobj=floatSize)
-    sizes = uStencil.symbolic_shape[2:]
 
-    u_size = Symbol(name="u_size", dtype=np.uint64)
-    UEq = IREq(u_size, (reduce(lambda x, y: x * y, sizes) * floatSize))
-    cUEq = ClusterizedEq(UEq, ispace=None)
-    UExp = Expression(cUEq, None, True)
+    ######## Build close section ########
+    closeSection = close_build(nthreads, filesArray, iSymbol, nthreadsDim)
     
-    openSection = open_build(filesArray, countersArray, iDim, nthreads, is_forward, iSymbol)
 
-    write_or_read_build(iet_body, is_forward, nthreads, filesArray, iSymbol, u_size, uStencil, t0, countersArray)
+    ######## Build write_size var ########
+    size_name = 'write_size' if is_forward else 'read_size'
+    ioSize = Symbol(name=size_name, dtype=np.int64)
+    ioSizeExp = io_size_build(ioSize, func_size)
+    
 
-    closeSection = close_build(nthreads, filesArray, iSymbol, iDim)
+    ######## Build save call ########
+    timerProfiler = Timer(profiler.name, [], ignoreDefinition=True)
+    saveCall = Call(name='save', arguments=[nthreads, timerProfiler, ioSize])
+
     
-    saveCallable = save_build(nthreads, timerProfiler, size, is_forward)
+    saveCallable = save_build(nthreads, timerProfiler, ioSize, is_forward)
+    openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward)
     
-    openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, iDim, is_forward)
-    
-    iet_body.insert(0, UExp)
+    iet_body.insert(0, funcSizeExp)
     iet_body.insert(0, floatSizeInit)
     iet_body.insert(0, openSection)
     iet_body.append(closeSection)
-    iet_body.append(sizeExp)
+    iet_body.append(ioSizeExp)
     iet_body.append(saveCall)
 
     return iet_body
 
-def open_build(filesArray, countersArray, iDim, nthreads, is_forward, iSymbol):
+def open_build(filesArray, countersArray, nthreadsDim, nthreads, is_forward, iSymbol):
     """
     This method inteds to code open section for both Forward and Gradient operators.
     
     Args:
         filesArray (files): pointer of allocated memory of nthreads dimension. Each place has a size of int
         countersArray (counters): pointer of allocated memory of nthreads dimension. Each place has a size of int
-        iDim (CustomDimension): dimension i from 0 to nthreads 
+        nthreadsDim (CustomDimension): dimension from 0 to nthreads 
         nthreads (NThreads): number of threads
         is_forward (bool): True for the Forward operator; False for the Gradient operator
 
@@ -183,14 +166,14 @@ def open_build(filesArray, countersArray, iDim, nthreads, is_forward, iSymbol):
         countersArrCond = array_alloc_check(countersArray) # gradient
         body.append(countersArrCond)
         
-        intervalGroup = IntervalGroup((Interval(iDim, 0, nthreads)))
+        intervalGroup = IntervalGroup((Interval(nthreadsDim, 0, nthreads)))
         cNewCountersEq = ClusterizedEq(IREq(countersArray[iSymbol], 1), ispace=IterationSpace(intervalGroup))
-        openIterationGrad = Iteration(Expression(cNewCountersEq, None, False), iDim, nthreads-1)
+        openIterationGrad = Iteration(Expression(cNewCountersEq, None, False), nthreadsDim, nthreads-1)
         body.append(openIterationGrad)
         
     return Section("open", body)
 
-def write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1):
+def write_build(nthreads, filesArray, iSymbol, func_size, funcStencil, t0, uVecSize1):
     """
     This method inteds to code gradient.c write section.
     Obs: maybe the desciption of the variables should be better    
@@ -199,8 +182,8 @@ def write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1):
         nthreads (NThreads): symbol of number of threads
         filesArray (files): pointer of allocated memory of nthreads dimension. Each place has a size of int
         iSymbol (Symbol): symbol of the iterator index i
-        u_size (Symbol): the uStencil size
-        uStencil (u): a stencil we call u
+        func_size (Symbol): the funcStencil size
+        funcStencil (u): a stencil we call u
         t0 (ModuloDimension): time t0
         uVecSize1 (FieldFromPointer): size of a vector u
 
@@ -208,8 +191,8 @@ def write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1):
         Section: complete wrie section
     """
     
-    iDim = CustomDimension(name="i", symbolic_size=uVecSize1)
-    interval = Interval(iDim, 0, uVecSize1)
+    uSizeDim = CustomDimension(name="i", symbolic_size=uVecSize1)
+    interval = Interval(uSizeDim, 0, uVecSize1)
     intervalGroup = IntervalGroup((interval))
     ispace = IterationSpace(intervalGroup)
     itNodes = []
@@ -220,23 +203,22 @@ def write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1):
     itNodes.append(Expression(cTidEq, None, True))
     
     ret = Symbol(name="ret", dtype=np.int32)
-    writeCall = Call(name="write", arguments=[filesArray[tid], uStencil[t0, iSymbol], u_size], retobj=ret)
+    writeCall = Call(name="write", arguments=[filesArray[tid], funcStencil[t0, iSymbol], func_size], retobj=ret)
     itNodes.append(writeCall)
 
     pstring = String("'Cannot open output file'")
     condNodes = [Call(name="perror", arguments=pstring)]
     condNodes.append(Call(name="exit", arguments=1))
-    cond = Conditional(CondNe(ret, u_size), condNodes)
+    cond = Conditional(CondNe(ret, func_size), condNodes)
     itNodes.append(cond)
 
-    iDim = CustomDimension(name="i", symbolic_size=uVecSize1)
     # TODO: Pragmas should depend on the user's selected optimization options and be generated by the compiler
     pragma = cgen.Pragma("omp parallel for schedule(static,1) num_threads(nthreads)")
-    writeIteration = Iteration(itNodes, iDim, uVecSize1-1, pragmas=[pragma])
+    writeIteration = Iteration(itNodes, uSizeDim, uVecSize1-1, pragmas=[pragma])
 
     return Section("write", writeIteration)
 
-def read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1, counters):
+def read_build(nthreads, filesArray, iSymbol, func_size, funcStencil, t0, uVecSize1, counters):
     """
     This method inteds to code gradient.c read section.
     Obs: maybe the desciption of the variables should be better    
@@ -245,8 +227,8 @@ def read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1, c
         nthreads (NThreads): symbol of number of threads
         filesArray (files): pointer of allocated memory of nthreads dimension. Each place has a size of int
         iSymbol (Symbol): symbol of the iterator index i
-        u_size (Symbol): the uStencil size
-        uStencil (u): a stencil we call u
+        func_size (Symbol): the funcStencil size
+        funcStencil (u): a stencil we call u
         t0 (ModuloDimension): time t0
         uVecSize1 (FieldFromPointer): size of a vector u
         counters (array): pointer of allocated memory of nthreads dimension. Each place has a size of int
@@ -271,19 +253,19 @@ def read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1, c
     cTidEq = ClusterizedEq(tidEq, ispace=ispace)
     itNodes.append(Expression(cTidEq, None, True))
     
-    # off_t offset = counters[tid] * u_size;
+    # off_t offset = counters[tid] * func_size;
     # lseek(files[tid], -1 * offset, SEEK_END);
     # TODO: make offset be a off_t
     offset = Symbol(name="offset", dtype=np.int32)
     SEEK_END = String("SEEK_END")
-    offsetEq = IREq(offset, (-1)*counters[tid]*u_size)
+    offsetEq = IREq(offset, (-1)*counters[tid]*func_size)
     cOffsetEq = ClusterizedEq(offsetEq, ispace=ispace)
     itNodes.append(Expression(cOffsetEq, None, True))    
     itNodes.append(Call(name="lseek", arguments=[filesArray[tid], offset, SEEK_END]))
 
-    # int ret = read(files[tid], u[t0][i], u_size);
+    # int ret = read(files[tid], u[t0][i], func_size);
     ret = Symbol(name="ret", dtype=np.int32)
-    readCall = Call(name="read", arguments=[filesArray[tid], uStencil[t0, iSymbol], u_size], retobj=ret)
+    readCall = Call(name="read", arguments=[filesArray[tid], funcStencil[t0, iSymbol], func_size], retobj=ret)
     itNodes.append(readCall)
 
     # printf("%d", ret);
@@ -296,7 +278,7 @@ def read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1, c
         Call(name="perror", arguments=pstring), 
         Call(name="exit", arguments=1)
     ]
-    cond = Conditional(CondNe(ret, u_size), condNodes) # if (ret != u_size)
+    cond = Conditional(CondNe(ret, func_size), condNodes) # if (ret != func_size)
     itNodes.append(cond)
     
     # counters[tid] = counters[tid] + 1
@@ -310,7 +292,7 @@ def read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uVecSize1, c
 
     return section
 
-def close_build(nthreads, filesArray, iSymbol, iDim):
+def close_build(nthreads, filesArray, iSymbol, nthreadsDim):
     """
     This method inteds to code gradient.c close section.
     Obs: maybe the desciption of the variables should be better
@@ -319,7 +301,7 @@ def close_build(nthreads, filesArray, iSymbol, iDim):
         nthreads (NThreads): symbol of number of threads
         filesArray (files): pointer of allocated memory of nthreads dimension. Each place has a size of int
         iSymbol (Symbol): symbol of the iterator index i
-        iDim (CustomDimension): dimension i from 0 to nthreads
+        nthreadsDim (CustomDimension): dimension from 0 to nthreads
 
     Returns:
         section (Section): complete close section
@@ -329,7 +311,7 @@ def close_build(nthreads, filesArray, iSymbol, iDim):
     itNode = Call(name="close", arguments=[filesArray[iSymbol]])    
     
     # for(int i=0; i < nthreads; i++) --> for(int i=0; i <= nthreads-1; i+=1)
-    closeIteration = Iteration(itNode, iDim, nthreads-1)
+    closeIteration = Iteration(itNode, nthreadsDim, nthreads-1)
     
     section = Section("close", closeIteration)
     
@@ -352,7 +334,7 @@ def array_alloc_check(array):
     return Conditional(CondEq(array, Macro('NULL')), [printfCall, exitCall])
     
 
-def open_threads_build(nthreads, filesArray, iSymbol, iDim, is_forward):
+def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward):
     """
     This method generates the function open_thread_files according to the operator used.
 
@@ -360,7 +342,7 @@ def open_threads_build(nthreads, filesArray, iSymbol, iDim, is_forward):
         nthreads (NThreads): number of threads
         filesArray (Array): array of files
         iSymbol (Symbol): symbol of the iterator index i 
-        iDim (CustomDimension): dimension i from 0 to nthreads
+        nthreadsDim (CustomDimension): dimension i from 0 to nthreads
         is_forward (bool): True for the Forward operator; False for the Gradient operator
 
     Returns:
@@ -403,7 +385,7 @@ def open_threads_build(nthreads, filesArray, iSymbol, iDim, is_forward):
     
     itNodes.append(openCond)
 
-    openIteration = Iteration(itNodes, iDim, nthreads-1)
+    openIteration = Iteration(itNodes, nthreadsDim, nthreads-1)
     
     body = CallableBody(openIteration)
     callable = Callable("open_thread_files", body, "void", [filesArray, nthreads])
@@ -496,7 +478,7 @@ def save_build(nthreads, timerProfiler, size, is_forward):
 
     return saveCallable
 
-def write_or_read_build(iet_body, is_forward, nthreads, filesArray, iSymbol, u_size, uStencil, t0, countersArray):
+def write_or_read_build(iet_body, is_forward, nthreads, filesArray, iSymbol, func_size, funcStencil, t0, countersArray):
     """
     Builds the read or write section of the operator, depending on the out_of_core mode.
     Replaces the temporary section at the end of the time iteration by the read or write section.   
@@ -507,18 +489,18 @@ def write_or_read_build(iet_body, is_forward, nthreads, filesArray, iSymbol, u_s
         nthreads (NThreads): symbol of number of threads
         filesArray (files): pointer of allocated memory of nthreads dimension. Each place has a size of int
         iSymbol (Symbol): symbol of the iterator index i
-        u_size (Symbol): the uStencil size
-        uStencil (u): a stencil we call u
+        func_size (Symbol): the funcStencil size
+        funcStencil (u): a stencil we call u
         t0 (ModuloDimension): time t0
         countersArray (array): pointer of allocated memory of nthreads dimension. Each place has a size of int
 
     """
 
     if is_forward:
-        ooc_section = write_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uStencil.symbolic_shape[1])
+        ooc_section = write_build(nthreads, filesArray, iSymbol, func_size, funcStencil, t0, funcStencil.symbolic_shape[1])
         temp_name = 'write_temp'
     else: # gradient
-        ooc_section = read_build(nthreads, filesArray, iSymbol, u_size, uStencil, t0, uStencil.symbolic_shape[1], countersArray)
+        ooc_section = read_build(nthreads, filesArray, iSymbol, func_size, funcStencil, t0, funcStencil.symbolic_shape[1], countersArray)
         temp_name = 'read_temp'  
 
     sections = FindNodes(Section).visit(iet_body)
@@ -528,3 +510,49 @@ def write_or_read_build(iet_body, is_forward, nthreads, filesArray, iSymbol, u_s
     timeIndex = next((i for i, node in enumerate(iet_body) if isinstance(node, Iteration) and isinstance(node.dim, TimeDimension)), None)
     transformedIet = Transformer(mapper).visit(iet_body[timeIndex])
     iet_body[timeIndex] = transformedIet
+
+
+def func_size_build(funcStencil, func_size):
+    """
+    Generates float_size init call and the init function size expression.
+
+    Args:
+        funcStencil (AbstractFunction): I/O function
+        func_size (Symbol): Symbol representing the I/O function size
+
+    Returns:
+        funcSizeExp: Expression initializing the function size
+        floatSizeInit: Call initializing float_size
+    """
+
+    floatSize = Symbol(name="float_size", dtype=np.uint64)
+    floatString = String(r"float")
+    floatSizeInit = Call(name="sizeof", arguments=[floatString], retobj=floatSize)
+    
+    # TODO: Function name must come from user?
+    sizes = funcStencil.symbolic_shape[2:]
+    funcEq = IREq(func_size, (reduce(lambda x, y: x * y, sizes) * floatSize))
+    funcSizeExp = Expression(ClusterizedEq(funcEq, ispace=None), None, True)
+
+    return funcSizeExp, floatSizeInit
+
+def io_size_build(ioSize, func_size):
+    """
+    Generates init expression calculating io_size.
+
+    Args:
+        ioSize (Symbol): Symbol representing the total amount of I/O data
+        func_size (Symbol): Symbol representing the I/O function size
+
+    Returns:
+        funcSizeExp: Expression initializing ioSize
+    """
+
+    time_M = Symbol(name="time_M", dtype=np.int32)
+    time_m = Symbol(name="time_m", dtype=np.int32)
+    #TODO: Field and pointer must be retrieved from somewhere
+    funcSize1 = FieldFromPointer("size[1]", "u_vec")
+    
+    ioSizeEq = IREq(ioSize, ((time_M - time_m+1) * funcSize1 * func_size))
+
+    return Expression(ClusterizedEq(ioSizeEq, ispace=None), None, True)

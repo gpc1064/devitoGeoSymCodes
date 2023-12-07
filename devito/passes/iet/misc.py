@@ -17,7 +17,7 @@ from devito.symbolics import String
 from devito.types import CustomDimension, Array, Symbol
 
 __all__ = ['avoid_denormals', 'hoist_prodders', 'relax_incr_dimensions',
-           'generate_macros', 'minimize_symbols', 'ooc_efuncs']
+           'generate_macros', 'minimize_symbols']
 
 
 @iet_pass
@@ -203,32 +203,3 @@ def remove_redundant_moddims(iet):
     iet = Uxreplace(subs0).visit(iet)
 
     return iet
-
-def saveB():
-    nodes = []
-    pstring = String("'>>>>>>>>>>>>>> FORWARD <<<<<<<<<<<<<<<<<\n'")
-    nodes.append(Call(name="printf", arguments=[pstring]))
-
-    nameDim = [CustomDimension(name="nameDim", symbolic_size=100)]
-    nameArray = Array(name='name', dimensions=nameDim, dtype=np.byte)
-
-    nvme_id = Symbol(name='nvme_id', dtype=np.int32)
-    pstring = String(r"'data/nvme%d/thread_%d.data'")
-    nodes.append(Call(name="sprintf", arguments=[nameArray, pstring, nvme_id]))
-
-    saveCallBody = CallableBody(nodes)
-    saveCallable = Callable("saveData", saveCallBody, "void", [])
-
-    return saveCallable
-
-@iet_pass
-def ooc_efuncs(iet, **kwargs):
-    saveCallable = saveB()
-
-    new_save_call = Call(name="saveData", arguments=[])
-    calls = FindNodes(Call).visit(iet)
-    save_call = next((call for call in calls if call.name == 'save'), None)
-    mapper={save_call: new_save_call}
-    iet = Transformer(mapper).visit(iet)
-    efuncs=[saveCallable]
-    return iet, {'efuncs': efuncs}
