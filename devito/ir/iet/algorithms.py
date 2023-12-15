@@ -128,7 +128,7 @@ def _ooc_build(iet_body, nt, profiler, out_of_core):
 
     
     saveCallable = save_build(nthreads, timerProfiler, ioSize, is_forward)
-    openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward)
+    openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, is_mpi)
     
     import pdb; pdb.set_trace()
     
@@ -354,54 +354,67 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, i
     """
     
     itNodes=[]
+    ifNodes=[]
     
+    # TODO: initialize char name[100]
     nvme_id = Symbol(name="nvme_id", dtype=np.int32)
     ndisks = Symbol(name="NDISKS", dtype=np.int32)
+    nameDim = [CustomDimension(name="nameDim", symbolic_size=100)]
+    nameArray = Array(name='name', dimensions=nameDim, dtype=np.byte)
+        
+    opFlagsStr = String("OPEN_FLAGS")
+    flagsStr = String("S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH")
+    openCall = Call(name="open", arguments=[nameArray, opFlagsStr, flagsStr], retobj=filesArray[iSymbol])
     
     if is_mpi:
+        # TODO: initialize int myrank
+        # TODO: initialize char error[140]
         myrank = Symbol(name="myrank", dtype=np.int32)
         dps = Symbol(name="DPS", dtype=np.int32)
         socket = Symbol(name="socket", dtype=np.int32)
+        errorDim = [CustomDimension(name="errorDim", symbolic_size=140)]
+        errorArray = Array(name='error', dimensions=errorDim, dtype=np.byte)
         
         nvmeIdEq = IREq(nvme_id, Mod(iSymbol, ndisks)+socket)        
         socketEq = IREq(socket, Mod(myrank, 2) * dps)
         cSocketEq = ClusterizedEq(socketEq, ispace=None)
+        cNvmeIdEq = ClusterizedEq(nvmeIdEq, ispace=None)                  
         
-        itNodes.append(Call(name="MPI_Comm_rank", arguments=[String("MPI_COMM_WORLD"), myrank]))
-        itNodes.append(Expression(cSocketEq, None, True))
+        itNodes.append(Call(name="MPI_Comm_rank", arguments=[String("MPI_COMM_WORLD"), String("&myrank")]))
+        itNodes.append(Expression(cSocketEq, None, True)) 
+        itNodes.append(Expression(cNvmeIdEq, None, True)) 
+        itNodes.append(Call(name="sprintf", arguments=[nameArray, String(r"'data/nvme%d/socket_%d_thread_%d.data'"), nvme_id, myrank, iSymbol]))
+        
+        if is_forward:
+            ifNodes.append(Call(name="sprintf", arguments=[errorArray, String(r"'Cannot open output file\n'"), nameArray]))
+            ifNodes.append(Call(name="perror", arguments=errorArray))
+            ifNodes.append(Call(name="exit", arguments=1))
+            elseNodes = [Call(name="printf", arguments=[String(r"'Creating file %s\n'"), nameArray])]
+            openCond = Conditional(CondEq(filesArray[iSymbol], -1), ifNodes, elseNodes)
+        else:
+            itNodes.append(Call(name="printf", arguments=[String(r"'Reading file %s\n'"), nameArray]))
+            ifNodes.append(Call(name="perror", arguments=String(r"'Cannot open output file\n'")))
+            ifNodes.append(Call(name="exit", arguments=1))
+            openCond = Conditional(CondEq(filesArray[iSymbol], -1), ifNodes)
         
     else:
         nvmeIdEq = IREq(nvme_id, Mod(iSymbol, ndisks))
+        cNvmeIdEq = ClusterizedEq(nvmeIdEq, ispace=None)
         
-    cNvmeIdEq = ClusterizedEq(nvmeIdEq, ispace=None) # ispace
-    
-    itNodes.append(Expression(cNvmeIdEq, None, True))
-
-    nameDim = [CustomDimension(name="nameDim", symbolic_size=100)]
-    nameArray = Array(name='name', dimensions=nameDim, dtype=np.byte)
-
-    pstring = String(r"'data/nvme%d/thread_%d.data'")
-    itNodes.append(Call(name="sprintf", arguments=[nameArray, pstring, nvme_id, iSymbol]))
-    
-    if is_forward:
-        pstring = String(r"'Creating file %s\n'")
-    else:
-        pstring = String(r"'Reading file %s\n'")
+        itNodes.append(Expression(cNvmeIdEq, None, True))   
+        itNodes.append(Call(name="sprintf", arguments=[nameArray, String(r"'data/nvme%d/thread_%d.data'"), nvme_id, iSymbol]))
         
-    itNodes.append(Call(name="printf", arguments=[pstring, nameArray]))
-
-    ifNodes=[]
-    pstring = String(r"'Cannot open output file\n'")
-    ifNodes.append(Call(name="perror", arguments=pstring))
-
-    ifNodes.append(Call(name="exit", arguments=1))
-
-    opFlagsStr = String("OPEN_FLAGS")
-    flagsStr = String("S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH")
-    openCall = Call(name="open", arguments=[nameArray, opFlagsStr, flagsStr], retobj=filesArray[iSymbol])
-    itNodes.append(openCall)
-
-    openCond = Conditional(CondEq(filesArray[iSymbol], -1), ifNodes)
+        if is_forward:
+            itNodes.append(Call(name="printf", arguments=[String(r"'Creating file %s\n'"), nameArray]))
+        else:
+            itNodes.append(Call(name="printf", arguments=[String(r"'Reading file %s\n'"), nameArray]))
+            
+        ifNodes.append(Call(name="perror", arguments=String(r"'Cannot open output file\n'")))
+        ifNodes.append(Call(name="exit", arguments=1))
+        openCond = Conditional(CondEq(filesArray[iSymbol], -1), ifNodes)
+         # ispace      
+    
+    itNodes.append(openCall)   
     
     itNodes.append(openCond)
 
