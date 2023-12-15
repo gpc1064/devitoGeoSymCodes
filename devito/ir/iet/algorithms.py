@@ -80,6 +80,7 @@ def _ooc_build(iet_body, nt, profiler, out_of_core):
     nthreads = NThreads(ignoreDefinition=True)
     
     is_forward = out_of_core == 'forward'
+    is_mpi = True
 
     ######## Dimension and symbol for iteration spaces ########
     nthreadsDim = CustomDimension(name="i", symbolic_size=nthreads)    
@@ -128,6 +129,8 @@ def _ooc_build(iet_body, nt, profiler, out_of_core):
     
     saveCallable = save_build(nthreads, timerProfiler, ioSize, is_forward)
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward)
+    
+    import pdb; pdb.set_trace()
     
     iet_body.insert(0, funcSizeExp)
     iet_body.insert(0, floatSizeInit)
@@ -334,7 +337,7 @@ def array_alloc_check(array):
     return Conditional(CondEq(array, Macro('NULL')), [printfCall, exitCall])
     
 
-def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward):
+def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, is_mpi):
     """
     This method generates the function open_thread_files according to the operator used.
 
@@ -344,17 +347,34 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward):
         iSymbol (Symbol): symbol of the iterator index i 
         nthreadsDim (CustomDimension): dimension i from 0 to nthreads
         is_forward (bool): True for the Forward operator; False for the Gradient operator
+        is_mpi (bool): True for the use of MPI; False otherwise.
 
     Returns:
         Callable: the callable function open_thread_files
     """
     
+    itNodes=[]
+    
     nvme_id = Symbol(name="nvme_id", dtype=np.int32)
     ndisks = Symbol(name="NDISKS", dtype=np.int32)
-    nvmeIdEq = IREq(nvme_id, Mod(iSymbol, ndisks))
+    
+    if is_mpi:
+        myrank = Symbol(name="myrank", dtype=np.int32)
+        dps = Symbol(name="DPS", dtype=np.int32)
+        socket = Symbol(name="socket", dtype=np.int32)
+        
+        nvmeIdEq = IREq(nvme_id, Mod(iSymbol, ndisks)+socket)        
+        socketEq = IREq(socket, Mod(myrank, 2) * dps)
+        cSocketEq = ClusterizedEq(socketEq, ispace=None)
+        
+        itNodes.append(Call(name="MPI_Comm_rank", arguments=[String("MPI_COMM_WORLD"), myrank]))
+        itNodes.append(Expression(cSocketEq, None, True))
+        
+    else:
+        nvmeIdEq = IREq(nvme_id, Mod(iSymbol, ndisks))
+        
     cNvmeIdEq = ClusterizedEq(nvmeIdEq, ispace=None) # ispace
-
-    itNodes=[]
+    
     itNodes.append(Expression(cNvmeIdEq, None, True))
 
     nameDim = [CustomDimension(name="nameDim", symbolic_size=100)]
@@ -556,3 +576,14 @@ def io_size_build(ioSize, func_size):
     ioSizeEq = IREq(ioSize, ((time_M - time_m+1) * funcSize1 * func_size))
 
     return Expression(ClusterizedEq(ioSizeEq, ispace=None), None, True)
+
+
+"""
+def sendrecvtxyz_build():
+
+def gathertxyz_build():
+
+def scattertxyz_build():
+
+def haloupdate0_build():
+"""
