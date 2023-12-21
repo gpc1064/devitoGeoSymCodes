@@ -8,11 +8,11 @@ from collections import OrderedDict
 
 from devito.tools import timed_pass
 from devito.symbolics import (CondEq, CondNe, Macro, String)
-from devito.symbolics.extended_sympy import FieldFromPointer
+from devito.symbolics.extended_sympy import (FieldFromPointer, Byref)
 from devito.types import CustomDimension, Array, Symbol, Pointer, FILE, Timer, NThreads, TimeDimension
 from devito.ir.iet import (Expression, Increment, Iteration, List, Conditional, SyncSpot,
                            Section, HaloSpot, ExpressionBundle, Call, Conditional, CallableBody, 
-                           Callable, FindSymbols, FindNodes, Transformer, Return)
+                           Callable, FindSymbols, FindNodes, Transformer, Return, Definition)
 from devito.ir.equations import IREq, ClusterizedEq
 from devito.ir.support import (Interval, IntervalGroup, IterationSpace, Backward, PARALLEL, AFFINE)
 
@@ -383,8 +383,6 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, i
     openCall = Call(name="open", arguments=[nameArray, opFlagsStr, flagsStr], retobj=filesArray[iSymbol])
     
     if is_mpi:
-        # TODO: initialize int myrank
-        # TODO: initialize char error[140]
         myrank = Symbol(name="myrank", dtype=np.int32)
         dps = Symbol(name="DPS", dtype=np.int32)
         socket = Symbol(name="socket", dtype=np.int32)
@@ -396,12 +394,15 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, i
         cSocketEq = ClusterizedEq(socketEq, ispace=None)
         cNvmeIdEq = ClusterizedEq(nvmeIdEq, ispace=None)                  
         
-        itNodes.append(Call(name="MPI_Comm_rank", arguments=[String("MPI_COMM_WORLD"), String("&myrank")]))
+        itNodes.append(Definition(function=myrank))
+        itNodes.append(Call(name="MPI_Comm_rank", arguments=[String("MPI_COMM_WORLD"), Byref(myrank)]))
         itNodes.append(Expression(cSocketEq, None, True)) 
-        itNodes.append(Expression(cNvmeIdEq, None, True)) 
+        itNodes.append(Expression(cNvmeIdEq, None, True))
+        itNodes.append(Definition(function=nameArray))
         itNodes.append(Call(name="sprintf", arguments=[nameArray, String(r"'data/nvme%d/socket_%d_thread_%d.data'"), nvme_id, myrank, iSymbol]))
         
         if is_forward:
+            ifNodes.append(Definition(function=errorArray))
             ifNodes.append(Call(name="sprintf", arguments=[errorArray, String(r"'Cannot open output file\n'"), nameArray]))
             ifNodes.append(Call(name="perror", arguments=errorArray))
             ifNodes.append(Call(name="exit", arguments=1))
@@ -417,7 +418,8 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, i
         nvmeIdEq = IREq(nvme_id, Mod(iSymbol, ndisks))
         cNvmeIdEq = ClusterizedEq(nvmeIdEq, ispace=None)
         
-        itNodes.append(Expression(cNvmeIdEq, None, True))   
+        itNodes.append(Expression(cNvmeIdEq, None, True))
+        itNodes.append(Definition(function=nameArray))
         itNodes.append(Call(name="sprintf", arguments=[nameArray, String(r"'data/nvme%d/thread_%d.data'"), nvme_id, iSymbol]))
         
         if is_forward:
@@ -479,14 +481,15 @@ def save_build(nthreads, timerProfiler, size, is_forward, is_mpi):
             tagOp = "REV"
             operation = "read"  
         
-    funcNodes.append(Call(name="printf", arguments=[opStrTitle]))
     
     if is_mpi:
-        # TODO: initialize int myrank 
+ 
         myrank = Symbol(name="myrank", dtype=np.int32)
-        funcNodes.append(Call(name="MPI_Comm_rank", arguments=[String("MPI_COMM_WORLD"), String("&myrank")]))
+        funcNodes.append(Definition(function=myrank))
+        funcNodes.append(Call(name="MPI_Comm_rank", arguments=[String("MPI_COMM_WORLD"), Byref(myrank)]))
         funcNodes.append(Conditional(CondNe(myrank, 0), Return()))
 
+    funcNodes.append(Call(name="printf", arguments=[opStrTitle]))
     pstring = String(r"'Threads %d\n'")
     funcNodes.append(Call(name="printf", arguments=[pstring, nthreads]))
 
@@ -624,9 +627,11 @@ def io_size_build(ioSize, func_size):
 
     return Expression(ClusterizedEq(ioSizeEq, ispace=None), None, True)
 
-
 """
 def sendrecvtxyz_build():
+    
+    bufg0_vec = Array
+
 
 def gathertxyz_build():
 
