@@ -8,11 +8,11 @@ from collections import OrderedDict
 
 from devito.tools import timed_pass
 from devito.symbolics import (CondEq, CondNe, Macro, String)
-from devito.symbolics.extended_sympy import (FieldFromPointer, Byref)
-from devito.types import CustomDimension, Array, Symbol, Pointer, FILE, Timer, NThreads, TimeDimension
+from devito.symbolics.extended_sympy import (FieldFromPointer, Byref, Deref)
+from devito.types import CustomDimension, Array, Symbol, Pointer, FILE, Timer, NThreads, TimeDimension, PointerArray
 from devito.ir.iet import (Expression, Increment, Iteration, List, Conditional, SyncSpot,
                            Section, HaloSpot, ExpressionBundle, Call, Conditional, CallableBody, 
-                           Callable, FindSymbols, FindNodes, Transformer, Return, Definition)
+                           Callable, FindSymbols, FindNodes, Transformer, Return, Definition, PointerCast)
 from devito.ir.equations import IREq, ClusterizedEq
 from devito.ir.support import (Interval, IntervalGroup, IterationSpace, Backward, PARALLEL, AFFINE)
 
@@ -96,7 +96,7 @@ def _ooc_build(iet_body, nt, profiler, out_of_core):
     ######## Build open section ########
     openSection = open_build(filesArray, countersArray, nthreadsDim, nthreads, is_forward, iSymbol)
     
-
+    
     ######## Build func_size var ########
     symbs = FindSymbols("symbolics").visit(iet_body)
     # TODO: Function name must come from user?
@@ -125,14 +125,34 @@ def _ooc_build(iet_body, nt, profiler, out_of_core):
 
     ######## Build save call ########
     timerProfiler = Timer(profiler.name, [], ignoreDefinition=True)
-    saveCall = Call(name='save', arguments=[nthreads, timerProfiler, ioSize])
-    
+    saveCall = Call(name='save', arguments=[nthreads, timerProfiler, ioSize])    
     saveCallable = save_build(nthreads, timerProfiler, ioSize, is_forward, is_mpi)
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, is_mpi)
     
-    """
-    sendRecvTxyzCallable = sendrecvtxyz_build()
+    ######## Build sendrecvtxyz call ########
+    bufXsize = Symbol(name='buf_x_size', dtype=np.int32)
+    bufYsize = Symbol(name='buf_y_size', dtype=np.int32)
+    bufZsize = Symbol(name='buf_z_size', dtype=np.int32)
+    
+    ogTime = Symbol(name='ogtime', dtype=np.int32)
+    ogX = Symbol(name='ogx', dtype=np.int32)
+    ogY = Symbol(name='ogy', dtype=np.int32)
+    ogZ = Symbol(name='ogz', dtype=np.int32)
+    
+    osTime = Symbol(name='ostime', dtype=np.int32)
+    osX = Symbol(name='osx', dtype=np.int32)
+    osY = Symbol(name='osy', dtype=np.int32)
+    osZ = Symbol(name='osz', dtype=np.int32)
+    
+    fromRank = Symbol(name='fromrank', dtype=np.int32)
+    toRank = Symbol(name='torank', dtype=np.int32)
+    sendRecvTxyzCallable = sendrecvtxyz_build(bufXsize, bufYsize, bufZsize, 
+                                              ogTime, ogX, ogY, ogZ, 
+                                              osTime, osX, osY, osZ,
+                                              fromRank, toRank,
+                                              nthreads)
 
+    """
     gatherTxyzCallable = gathertxyz_build()
 
     scatterTxyzCallable = scattertxyz_build()
@@ -627,12 +647,86 @@ def io_size_build(ioSize, func_size):
 
     return Expression(ClusterizedEq(ioSizeEq, ispace=None), None, True)
 
-"""
-def sendrecvtxyz_build():
+# TODO: struct dataobj *restrict a0_vec, MPI_Comm comm remain to be given as input 
+def sendrecvtxyz_build(bufXsize, bufYsize, bufZsize,
+                       ogTime, ogX, ogY, ogZ, 
+                       osTime, osX, osY, osZ,
+                       fromRank, toRank,
+                       nthreads):
     
-    bufg0_vec = Array
+    funcNodes = []
+    bufSizeVol = Symbol(name='buf_vol_size', dtype=np.int32)
+    bufSizeVolDef = IREq(bufSizeVol, bufXsize*bufYsize*bufZsize)
+    eBufSizeVolDef = Expression(ClusterizedEq(bufSizeVolDef, ispace=None), None, True)
+    
+    bufg0_vec = Array(name='bufg0', dimensions=CustomDimension(name='a'), dtype=np.float32)
+    funcNodes.append(Definition(function=bufg0_vec))    
+    bufs0_vec = Array(name='bufs0', dimensions=CustomDimension(name='a'), dtype=np.float32)
+    funcNodes.append(Definition(function=bufs0_vec))
+    
+    # TODO: how to call posix_mem_align
+    # poxisMemAlignCallable = Call(name='posix_memalign', arguments=[64,])
+    
+    # TODO: comm and &(rrecv) must be given as input
+    funcNodes.append(
+        Call(
+            name='MPI_Irecv',
+            arguments=[bufs0_vec, bufSizeVol, String(r"MPI_FLOAT"), fromRank, 13]
+        )
+    )
+    
+    # TODO: a0_vec must be given as input
+    gathertxyzCallable = Call(name='gathertxyz', arguments=[bufg0_vec, bufXsize, bufYsize, bufZsize, ogTime, ogX, ogY, ogZ, nthreads])
+    funcNodes.append(Conditional(CondNe(toRank, String(r"MPI_PROC_NULL")), gathertxyzCallable))
+    
+    # TODO: comm and &(rrecv) must be given as input
+    funcNodes.append(eBufSizeVolDef)
+    funcNodes.append(
+        Call(
+            name='MPI_Isend',
+            arguments=[bufs0_vec, bufSizeVol, String(r"MPI_FLOAT"), fromRank, 13]
+        )
+    )
+    
+    # TODO: comm and &(rsend) must be given as input
+    funcNodes.append(
+        Call(
+            name='MPI_Wait',
+            arguments=[String(r"MPI_STATUS_IGNORE")]
+        )
+    )
+    
+    # TODO: comm and &(rrecv) must be given as input
+    funcNodes.append(
+        Call(
+            name='MPI_Wait',
+            arguments=[String(r"MPI_STATUS_IGNORE")]
+        )
+    )
+    
+     # TODO: a0_vec must be given as input
+    scattertxyzCallable = Call(name='scattertxyz', arguments=[bufs0_vec, bufXsize, bufYsize, bufZsize, ogTime, ogX, ogY, ogZ, nthreads])
+    funcNodes.append(Conditional(CondNe(fromRank, String(r"MPI_PROC_NULL")), gathertxyzCallable))
+    
+    funcNodes.append(Call(name='free', arguments=[bufg0_vec]))
+    funcNodes.append(Call(name='free', arguments=[bufs0_vec]))
+    
+    sendRecvTxyzCallable = Callable(
+        "sendrecvtxyz", 
+        CallableBody(funcNodes), 
+        "static void",
+        [
+            bufXsize, bufYsize, bufZsize,
+            ogTime, ogX, ogY, ogZ, 
+            osTime, osX, osY, osZ,
+            fromRank, toRank,
+            nthreads
+        ]
+    )
+    
+    return sendRecvTxyzCallable
 
-
+"""
 def gathertxyz_build():
 
 def scattertxyz_build():
