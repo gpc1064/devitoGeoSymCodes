@@ -12,7 +12,7 @@ from devito.symbolics.extended_sympy import (FieldFromPointer, Byref, Deref)
 from devito.types import CustomDimension, Array, Symbol, Pointer, FILE, Timer, NThreads, TimeDimension, PointerArray
 from devito.ir.iet import (Expression, Increment, Iteration, List, Conditional, SyncSpot,
                            Section, HaloSpot, ExpressionBundle, Call, Conditional, CallableBody, 
-                           Callable, FindSymbols, FindNodes, Transformer, Return, Definition, PointerCast)
+                           Callable, FindSymbols, FindNodes, Transformer, Return, Definition, Pragma, ParallelBlock, PointerCast)
 from devito.ir.equations import IREq, ClusterizedEq
 from devito.ir.support import (Interval, IntervalGroup, IterationSpace, Backward, PARALLEL, AFFINE)
 
@@ -129,36 +129,24 @@ def _ooc_build(iet_body, nt, profiler, out_of_core):
     saveCallable = save_build(nthreads, timerProfiler, ioSize, is_forward, is_mpi)
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, is_mpi)
     
-    ######## Build sendrecvtxyz call ########
-    bufXsize = Symbol(name='buf_x_size', dtype=np.int32)
-    bufYsize = Symbol(name='buf_y_size', dtype=np.int32)
-    bufZsize = Symbol(name='buf_z_size', dtype=np.int32)
-    
-    ogTime = Symbol(name='ogtime', dtype=np.int32)
-    ogX = Symbol(name='ogx', dtype=np.int32)
-    ogY = Symbol(name='ogy', dtype=np.int32)
-    ogZ = Symbol(name='ogz', dtype=np.int32)
-    
-    osTime = Symbol(name='ostime', dtype=np.int32)
-    osX = Symbol(name='osx', dtype=np.int32)
-    osY = Symbol(name='osy', dtype=np.int32)
-    osZ = Symbol(name='osz', dtype=np.int32)
-    
-    fromRank = Symbol(name='fromrank', dtype=np.int32)
-    toRank = Symbol(name='torank', dtype=np.int32)
-    sendRecvTxyzCallable = sendrecvtxyz_build(bufXsize, bufYsize, bufZsize, 
-                                              ogTime, ogX, ogY, ogZ, 
-                                              osTime, osX, osY, osZ,
-                                              fromRank, toRank,
-                                              nthreads)
+    if is_mpi:
+        
+        bufXsize = Symbol(name='buf_x_size', dtype=np.int32)
+        bufYsize = Symbol(name='buf_y_size', dtype=np.int32)
+        bufZsize = Symbol(name='buf_z_size', dtype=np.int32)
+        
+        ######## Build sendrecvtxyz call ########        
+        sendRecvTxyzCallable = sendrecvtxyz_build(bufXsize, bufYsize, bufZsize, nthreads)
 
-    """
-    gatherTxyzCallable = gathertxyz_build()
+        ######## Build gathertxyz call ########
+        gatherTxyzCallable = txyz_build(bufXsize, bufYsize, bufZsize, nthreads, True)
+        
+        ######## Build scattertxyz call ########
+        scatterTxyzCallable = txyz_build(bufXsize, bufYsize, bufZsize, nthreads, False)
 
-    scatterTxyzCallable = scattertxyz_build()
-
-    haloUpdate0Callable = haloupdate0_build()
-    """
+        """
+        haloUpdate0Callable = haloupdate0_build()
+        """
     
     import pdb; pdb.set_trace()
     
@@ -456,7 +444,7 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, i
     
     itNodes.append(openCond)
 
-    openIteration = Iteration(itNodes, nthreadsDim, nthreads-1)
+    openIteration = Iteration(itNodes, nthreadsDim, nthreads)
     
     body = CallableBody(openIteration)
     callable = Callable("open_thread_files", body, "void", [filesArray, nthreads])
@@ -648,13 +636,23 @@ def io_size_build(ioSize, func_size):
     return Expression(ClusterizedEq(ioSizeEq, ispace=None), None, True)
 
 # TODO: struct dataobj *restrict a0_vec, MPI_Comm comm remain to be given as input 
-def sendrecvtxyz_build(bufXsize, bufYsize, bufZsize,
-                       ogTime, ogX, ogY, ogZ, 
-                       osTime, osX, osY, osZ,
-                       fromRank, toRank,
-                       nthreads):
+def sendrecvtxyz_build(bufXsize, bufYsize, bufZsize, nthreads):
     
     funcNodes = []
+    
+    ogTime = Symbol(name='ogtime', dtype=np.int32)
+    ogX = Symbol(name='ogx', dtype=np.int32)
+    ogY = Symbol(name='ogy', dtype=np.int32)
+    ogZ = Symbol(name='ogz', dtype=np.int32)
+    
+    osTime = Symbol(name='ostime', dtype=np.int32)
+    osX = Symbol(name='osx', dtype=np.int32)
+    osY = Symbol(name='osy', dtype=np.int32)
+    osZ = Symbol(name='osz', dtype=np.int32)
+    
+    fromRank = Symbol(name='fromrank', dtype=np.int32)
+    toRank = Symbol(name='torank', dtype=np.int32)
+    
     bufSizeVol = Symbol(name='buf_vol_size', dtype=np.int32)
     bufSizeVolDef = IREq(bufSizeVol, bufXsize*bufYsize*bufZsize)
     eBufSizeVolDef = Expression(ClusterizedEq(bufSizeVolDef, ispace=None), None, True)
@@ -704,13 +702,14 @@ def sendrecvtxyz_build(bufXsize, bufYsize, bufZsize,
         )
     )
     
-     # TODO: a0_vec must be given as input
-    scattertxyzCallable = Call(name='scattertxyz', arguments=[bufs0_vec, bufXsize, bufYsize, bufZsize, ogTime, ogX, ogY, ogZ, nthreads])
-    funcNodes.append(Conditional(CondNe(fromRank, String(r"MPI_PROC_NULL")), gathertxyzCallable))
+    # TODO: a0_vec must be given as input
+    scattertxyzCallable = Call(name='scattertxyz', arguments=[bufs0_vec, bufXsize, bufYsize, bufZsize, osTime, osX, osY, osZ, nthreads])
+    funcNodes.append(Conditional(CondNe(fromRank, String(r"MPI_PROC_NULL")), scattertxyzCallable))
     
     funcNodes.append(Call(name='free', arguments=[bufg0_vec]))
     funcNodes.append(Call(name='free', arguments=[bufs0_vec]))
     
+    # TODO: struct dataobj *restrict a0_vec must be given as input
     sendRecvTxyzCallable = Callable(
         "sendrecvtxyz", 
         CallableBody(funcNodes), 
@@ -726,10 +725,74 @@ def sendrecvtxyz_build(bufXsize, bufYsize, bufZsize,
     
     return sendRecvTxyzCallable
 
+
+def txyz_build(bufXsize, bufYsize, bufZsize, nthreads, is_gather):
+    
+    funcNodes = []
+    # itXNodes = []
+    # itYNodes = []
+    itZNodes = []
+    
+    oTime = Symbol(name='otime', dtype=np.int32)
+    oX = Symbol(name='ox', dtype=np.int32)
+    oY = Symbol(name='oy', dtype=np.int32)
+    oZ = Symbol(name='oz', dtype=np.int32)
+    
+    ## x for-loop
+    x = Symbol(name='x', dtype=np.int32)
+    xDim = CustomDimension(name="x", symbolic_size=bufXsize)
+    
+    ## y for-loop
+    y = Symbol(name='y', dtype=np.int32)
+    yDim = CustomDimension(name="y", symbolic_size=bufYsize)
+    
+    ## z for-loop
+    z = Symbol(name='z', dtype=np.int32)
+    zDim = CustomDimension(name="z", symbolic_size=bufZsize)
+    intervalZ = Interval(zDim, 0, bufZsize)
+    intervalGroupZ = IntervalGroup((intervalZ))
+    zspace = IterationSpace(intervalGroupZ)
+    
+    ## Pragmas
+    # import pdb; pdb.set_trace()
+    outterPragma = Pragma(cgen.Pragma, arguments="omp parallel num_threads(nthreads)")
+    midPragma = cgen.Pragma("omp for collapse(2) schedule(static,1)")
+    innerPragma = cgen.Pragma("omp simd aligned(a0:64)")
+    
+    # TODO: a0 must be defined differently
+    a0 = Array(name='a0', dimensions=CustomDimension(name='a'), dtype=np.float32)
+    # TODO: buf0 and buf1 must be defined differently
+    if is_gather:
+        func_name = "gathertxyz"
+        buf_vec = Array(name='buf0', dimensions=CustomDimension(name='a'), dtype=np.float32)
+        bufEq = IREq(buf_vec[x,y,z], a0[oTime, x + oX, y + oY, z + oZ])
+    else:
+        func_name = "scattertxyz"
+        buf_vec = Array(name='buf1', dimensions=CustomDimension(name='a'), dtype=np.float32)
+        bufEq = IREq(a0[oTime, x + oX, y + oY, z + oZ], buf_vec[x,y,z])
+        
+    itZNodes.append(Expression(expr=ClusterizedEq(bufEq, ispace=zspace), init=False))
+    
+    iterationZ = Iteration(itZNodes, zDim, bufZsize-1, pragmas=[innerPragma])
+    iterationY = Iteration(iterationZ, yDim, bufYsize-1)
+    iterationX = Iteration(iterationY, xDim, bufXsize-1, pragmas=[midPragma])
+    
+    funcNodes.append(outterPragma)
+    funcNodes.append(iterationX)
+    
+    # TODO: struct dataobj *restrict a0_vec must be given as input 
+    txyzCallable = Callable(
+        func_name, 
+        CallableBody(funcNodes), 
+        "static void",
+        [
+            buf_vec, bufXsize, bufYsize, bufZsize, oTime, oX, oY, oZ, nthreads
+        ]
+    )
+    
+    return txyzCallable
+    
+
 """
-def gathertxyz_build():
-
-def scattertxyz_build():
-
 def haloupdate0_build():
 """
