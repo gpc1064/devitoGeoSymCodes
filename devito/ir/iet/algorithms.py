@@ -6,6 +6,7 @@ from sympy import Mod
 from functools import reduce
 from collections import OrderedDict
 
+from devito.mpi import MPI
 from devito.tools import timed_pass
 from devito.symbolics import (CondEq, CondNe, Macro, String)
 from devito.symbolics.extended_sympy import (FieldFromPointer, Byref, Deref)
@@ -144,9 +145,9 @@ def _ooc_build(iet_body, nt, profiler, out_of_core):
         ######## Build scattertxyz call ########
         scatterTxyzCallable = txyz_build(bufXsize, bufYsize, bufZsize, nthreads, False)
 
-        """
-        haloUpdate0Callable = haloupdate0_build()
-        """
+        ######## Build haloupdate0 call ########
+        haloUpdate0Callable = haloupdate0_build(nthreads)
+        
     
     import pdb; pdb.set_trace()
     
@@ -792,7 +793,27 @@ def txyz_build(bufXsize, bufYsize, bufZsize, nthreads, is_gather):
     
     return txyzCallable
     
-
-"""
-def haloupdate0_build():
-"""
+def haloupdate0_build(nthreads):
+    
+    funcNodes = []
+    oTime = Symbol(name='otime', dtype=np.int32)
+    
+    # TODO: a0_vec fields and comm must be given as inputs    
+    funcNodes.append(Call(name='sendrecvtxyz', arguments=[oTime, nthreads]))
+    funcNodes.append(Call(name='sendrecvtxyz', arguments=[oTime, nthreads]))
+    funcNodes.append(Call(name='sendrecvtxyz', arguments=[oTime, nthreads]))
+    funcNodes.append(Call(name='sendrecvtxyz', arguments=[oTime, nthreads]))
+    funcNodes.append(Call(name='sendrecvtxyz', arguments=[oTime, nthreads]))
+    funcNodes.append(Call(name='sendrecvtxyz', arguments=[oTime, nthreads]))
+    
+    
+    haloupdate0Callable = Callable(
+        "haloupdate0", 
+        CallableBody(funcNodes), 
+        "static void",
+        [
+            oTime, nthreads
+        ]
+    )
+    
+    return haloupdate0Callable
