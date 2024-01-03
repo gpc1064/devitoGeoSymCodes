@@ -26,6 +26,7 @@ def iet_build(stree, **kwargs):
     """
 
     out_of_core = kwargs['options']['out-of-core']
+    is_mpi = kwargs['options']['mpi']
     
     nsections = 0
     queues = OrderedDict()
@@ -34,7 +35,7 @@ def iet_build(stree, **kwargs):
             # We hit this handle at the very end of the visit
             iet_body = queues.pop(i)
             if(out_of_core):
-                iet_body = _ooc_build(iet_body, kwargs['sregistry'].nthreads, kwargs['profiler'], out_of_core)
+                iet_body = _ooc_build(iet_body, kwargs['sregistry'].nthreads, kwargs['profiler'], out_of_core, is_mpi)
                 return List(body=iet_body)
             else:                
                 return List(body=iet_body)
@@ -77,12 +78,11 @@ def iet_build(stree, **kwargs):
 
 
 @timed_pass(name='ooc_build')
-def _ooc_build(iet_body, nt, profiler, out_of_core):
+def _ooc_build(iet_body, nt, profiler, out_of_core, is_mpi):
     # Creates nthreads once again in order to enable the ignoreDefinition flag
     nthreads = NThreads(ignoreDefinition=True)
     
     is_forward = out_of_core == 'forward'
-    is_mpi = False
 
     ######## Dimension and symbol for iteration spaces ########
     nthreadsDim = CustomDimension(name="i", symbolic_size=nthreads)    
@@ -130,16 +130,7 @@ def _ooc_build(iet_body, nt, profiler, out_of_core):
     
     saveCallable = save_build(nthreads, timerProfiler, ioSize, is_forward, is_mpi)
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, is_mpi)
-    
-    """
-    sendRecvTxyzCallable = sendrecvtxyz_build()
 
-    gatherTxyzCallable = gathertxyz_build()
-
-    scatterTxyzCallable = scattertxyz_build()
-
-    haloUpdate0Callable = haloupdate0_build()
-    """
     
     import pdb; pdb.set_trace()
     
