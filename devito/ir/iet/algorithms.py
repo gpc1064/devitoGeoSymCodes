@@ -82,7 +82,7 @@ def _ooc_build(iet_body, nt, profiler, out_of_core):
     nthreads = NThreads(ignoreDefinition=True)
     
     is_forward = out_of_core == 'forward'
-    is_mpi = True
+    is_mpi = False
 
     ######## Dimension and symbol for iteration spaces ########
     nthreadsDim = CustomDimension(name="i", symbolic_size=nthreads)    
@@ -143,6 +143,7 @@ def _ooc_build(iet_body, nt, profiler, out_of_core):
     
     import pdb; pdb.set_trace()
     
+    #TODO: Generate blank lines between sections
     iet_body.insert(0, funcSizeExp)
     iet_body.insert(0, floatSizeInit)
     iet_body.insert(0, openSection)
@@ -220,10 +221,8 @@ def write_build(nthreads, filesArray, iSymbol, func_size, funcStencil, t0, uVecS
     writeCall = Call(name="write", arguments=[filesArray[tid], funcStencil[t0, iSymbol], func_size], retobj=ret)
     itNodes.append(writeCall)
     
-    if is_mpi:
-        pstring = String("'Write size mismatch with u_size'")
-    else:
-        pstring = String("'Cannot open output file'")
+    pstring = String("'Write size mismatch with function slice size'")
+
     condNodes = [Call(name="perror", arguments=pstring)]
     condNodes.append(Call(name="exit", arguments=1))
     cond = Conditional(CondNe(ret, func_size), condNodes)
@@ -374,7 +373,7 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, i
     
     # TODO: initialize char name[100]
     nvme_id = Symbol(name="nvme_id", dtype=np.int32)
-    ndisks = Symbol(name="NDISKS", dtype=np.int32)
+    ndisks = Symbol(name="NDISKS", dtype=np.int32, ignoreDefinition=True)
     nameDim = [CustomDimension(name="nameDim", symbolic_size=100)]
     nameArray = Array(name='name', dimensions=nameDim, dtype=np.byte)
         
@@ -386,7 +385,7 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, i
         # TODO: initialize int myrank
         # TODO: initialize char error[140]
         myrank = Symbol(name="myrank", dtype=np.int32)
-        dps = Symbol(name="DPS", dtype=np.int32)
+        dps = Symbol(name="DPS", dtype=np.int32, ignoreDefinition=True)
         socket = Symbol(name="socket", dtype=np.int32)
         errorDim = [CustomDimension(name="errorDim", symbolic_size=140)]
         errorArray = Array(name='error', dimensions=errorDim, dtype=np.byte)
@@ -396,23 +395,11 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, i
         cSocketEq = ClusterizedEq(socketEq, ispace=None)
         cNvmeIdEq = ClusterizedEq(nvmeIdEq, ispace=None)                  
         
-        itNodes.append(Call(name="MPI_Comm_rank", arguments=[Macro("MPI_COMM_WORLD"), Byref("myrank")]))
+        # TODO: MPI_COMM_WORLD as Macro. Try to find a berrer IR to &myrank 
+        itNodes.append(Call(name="MPI_Comm_rank", arguments=[String("MPI_COMM_WORLD"), String("&myrank")]))
         itNodes.append(Expression(cSocketEq, None, True)) 
         itNodes.append(Expression(cNvmeIdEq, None, True)) 
         itNodes.append(Call(name="sprintf", arguments=[nameArray, String(r"'data/nvme%d/socket_%d_thread_%d.data'"), nvme_id, myrank, iSymbol]))
-        
-        if is_forward:
-            ifNodes.append(Call(name="sprintf", arguments=[errorArray, String(r"'Cannot open output file\n'"), nameArray]))
-            ifNodes.append(Call(name="perror", arguments=errorArray))
-            ifNodes.append(Call(name="exit", arguments=1))
-            elseNodes = [Call(name="printf", arguments=[String(r"'Creating file %s\n'"), nameArray])]
-            openCond = Conditional(CondEq(filesArray[iSymbol], -1), ifNodes, elseNodes)
-        else:
-            itNodes.append(Call(name="printf", arguments=[String(r"'Reading file %s\n'"), nameArray]))
-            ifNodes.append(Call(name="perror", arguments=String(r"'Cannot open output file\n'")))
-            ifNodes.append(Call(name="exit", arguments=1))
-            openCond = Conditional(CondEq(filesArray[iSymbol], -1), ifNodes)
-        
     else:
         nvmeIdEq = IREq(nvme_id, Mod(iSymbol, ndisks))
         cNvmeIdEq = ClusterizedEq(nvmeIdEq, ispace=None)
@@ -420,15 +407,16 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, i
         itNodes.append(Expression(cNvmeIdEq, None, True))   
         itNodes.append(Call(name="sprintf", arguments=[nameArray, String(r"'data/nvme%d/thread_%d.data'"), nvme_id, iSymbol]))
         
-        if is_forward:
-            itNodes.append(Call(name="printf", arguments=[String(r"'Creating file %s\n'"), nameArray]))
-        else:
-            itNodes.append(Call(name="printf", arguments=[String(r"'Reading file %s\n'"), nameArray]))
-            
-        ifNodes.append(Call(name="perror", arguments=String(r"'Cannot open output file\n'")))
-        ifNodes.append(Call(name="exit", arguments=1))
-        openCond = Conditional(CondEq(filesArray[iSymbol], -1), ifNodes)
-         # ispace      
+    
+    if is_forward:
+        itNodes.append(Call(name="printf", arguments=[String(r"'Creating file %s\n'"), nameArray]))
+    else:
+        itNodes.append(Call(name="printf", arguments=[String(r"'Reading file %s\n'"), nameArray]))
+
+
+    ifNodes.append(Call(name="perror", arguments=String(r"'Cannot open output file\n'")))
+    ifNodes.append(Call(name="exit", arguments=1))
+    openCond = Conditional(CondEq(filesArray[iSymbol], -1), ifNodes) 
     
     itNodes.append(openCall)   
     
@@ -459,7 +447,6 @@ def save_build(nthreads, timerProfiler, size, is_forward, is_mpi):
     
     funcNodes = []
     
-    # import pdb; pdb.set_trace()
     if is_mpi:
         if is_forward:
             opStrTitle = String("'>>>>>>>>>>>>>> MPI FORWARD <<<<<<<<<<<<<<<<<\n'")
@@ -482,7 +469,7 @@ def save_build(nthreads, timerProfiler, size, is_forward, is_mpi):
     funcNodes.append(Call(name="printf", arguments=[opStrTitle]))
     
     if is_mpi:
-        # TODO: initialize int myrank 
+        # TODO: Found a better IR to &myrank
         myrank = Symbol(name="myrank", dtype=np.int32)
         funcNodes.append(Call(name="MPI_Comm_rank", arguments=[Macro("MPI_COMM_WORLD"), Byref(myrank)]))
         funcNodes.append(Conditional(CondNe(myrank, 0), Return()))
@@ -623,14 +610,3 @@ def io_size_build(ioSize, func_size):
     ioSizeEq = IREq(ioSize, ((time_M - time_m+1) * funcSize1 * func_size))
 
     return Expression(ClusterizedEq(ioSizeEq, ispace=None), None, True)
-
-
-"""
-def sendrecvtxyz_build():
-
-def gathertxyz_build():
-
-def scattertxyz_build():
-
-def haloupdate0_build():
-"""
