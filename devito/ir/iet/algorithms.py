@@ -8,7 +8,7 @@ from collections import OrderedDict
 
 from devito.tools import timed_pass
 from devito.symbolics import (CondEq, CondNe, Macro, String)
-from devito.symbolics.extended_sympy import FieldFromPointer
+from devito.symbolics.extended_sympy import (FieldFromPointer, Byref)
 from devito.types import CustomDimension, Array, Symbol, Pointer, FILE, Timer, NThreads, TimeDimension
 from devito.ir.iet import (Expression, Increment, Iteration, List, Conditional, SyncSpot,
                            Section, HaloSpot, ExpressionBundle, Call, Conditional, CallableBody, 
@@ -26,6 +26,7 @@ def iet_build(stree, **kwargs):
     """
 
     out_of_core = kwargs['options']['out-of-core']
+    
     nsections = 0
     queues = OrderedDict()
     for i in stree.visit():
@@ -276,11 +277,10 @@ def read_build(nthreads, filesArray, iSymbol, func_size, funcStencil, t0, uVecSi
     # lseek(files[tid], -1 * offset, SEEK_END);
     # TODO: make offset be a off_t
     offset = Symbol(name="offset", dtype=np.int32)
-    SEEK_END = String("SEEK_END")
     offsetEq = IREq(offset, (-1)*counters[tid]*func_size)
     cOffsetEq = ClusterizedEq(offsetEq, ispace=ispace)
     itNodes.append(Expression(cOffsetEq, None, True))    
-    itNodes.append(Call(name="lseek", arguments=[filesArray[tid], offset, SEEK_END]))
+    itNodes.append(Call(name="lseek", arguments=[filesArray[tid], offset, Macro("SEEK_END")]))
 
     # int ret = read(files[tid], u[t0][i], func_size);
     ret = Symbol(name="ret", dtype=np.int32)
@@ -396,7 +396,7 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, i
         cSocketEq = ClusterizedEq(socketEq, ispace=None)
         cNvmeIdEq = ClusterizedEq(nvmeIdEq, ispace=None)                  
         
-        itNodes.append(Call(name="MPI_Comm_rank", arguments=[String("MPI_COMM_WORLD"), String("&myrank")]))
+        itNodes.append(Call(name="MPI_Comm_rank", arguments=[Macro("MPI_COMM_WORLD"), Byref("myrank")]))
         itNodes.append(Expression(cSocketEq, None, True)) 
         itNodes.append(Expression(cNvmeIdEq, None, True)) 
         itNodes.append(Call(name="sprintf", arguments=[nameArray, String(r"'data/nvme%d/socket_%d_thread_%d.data'"), nvme_id, myrank, iSymbol]))
@@ -484,7 +484,7 @@ def save_build(nthreads, timerProfiler, size, is_forward, is_mpi):
     if is_mpi:
         # TODO: initialize int myrank 
         myrank = Symbol(name="myrank", dtype=np.int32)
-        funcNodes.append(Call(name="MPI_Comm_rank", arguments=[String("MPI_COMM_WORLD"), String("&myrank")]))
+        funcNodes.append(Call(name="MPI_Comm_rank", arguments=[Macro("MPI_COMM_WORLD"), Byref(myrank)]))
         funcNodes.append(Conditional(CondNe(myrank, 0), Return()))
 
     pstring = String(r"'Threads %d\n'")
