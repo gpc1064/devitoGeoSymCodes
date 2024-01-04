@@ -78,9 +78,9 @@ def iet_build(stree, **kwargs):
 
 
 @timed_pass(name='ooc_build')
-def _ooc_build(iet_body, nt, profiler, out_of_core, is_mpi):
+def _ooc_build(iet_body, nthreads, profiler, out_of_core, is_mpi):
     # Creates nthreads once again in order to enable the ignoreDefinition flag
-    nthreads = NThreads(ignoreDefinition=True)
+    #nthreads = NThreads(ignoreDefinition=True)
     
     is_forward = out_of_core == 'forward'
 
@@ -126,13 +126,10 @@ def _ooc_build(iet_body, nt, profiler, out_of_core, is_mpi):
 
     ######## Build save call ########
     timerProfiler = Timer(profiler.name, [], ignoreDefinition=True)
-    saveCall = Call(name='save', arguments=[nthreads, timerProfiler, ioSize])
+    saveCall = Call(name='save_temp', arguments=[nthreads, timerProfiler, ioSize])
     
     saveCallable = save_build(nthreads, timerProfiler, ioSize, is_forward, is_mpi)
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, is_mpi)
-
-    
-    import pdb; pdb.set_trace()
     
     #TODO: Generate blank lines between sections
     iet_body.insert(0, funcSizeExp)
@@ -163,7 +160,7 @@ def open_build(filesArray, countersArray, nthreadsDim, nthreads, is_forward, iSy
     filesArrCond = array_alloc_check(filesArray) #  Forward
     
     #Call open_thread_files
-    open_thread_call = Call(name='open_thread_files', arguments=[filesArray, nthreads])
+    open_thread_call = Call(name='open_thread_files_temp', arguments=[filesArray, nthreads])
 
     # Open section body
     body = [filesArrCond, open_thread_call]
@@ -593,6 +590,7 @@ def io_size_build(ioSize, func_size):
         funcSizeExp: Expression initializing ioSize
     """
 
+    #TODO: Time limits must be retrieved
     time_M = Symbol(name="time_M", dtype=np.int32)
     time_m = Symbol(name="time_m", dtype=np.int32)
     #TODO: Field and pointer must be retrieved from somewhere
