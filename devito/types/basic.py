@@ -17,7 +17,7 @@ from devito.types.caching import Cached, Uncached
 from devito.types.lazy import Evaluable
 from devito.types.utils import DimensionTuple
 
-__all__ = ['Symbol', 'Scalar', 'Indexed', 'IndexedData', 'DeviceMap']
+__all__ = ['AbstractFunction', 'Symbol', 'Scalar', 'Indexed', 'IndexedData', 'DeviceMap']
 
 
 Size = namedtuple('Size', 'left right')
