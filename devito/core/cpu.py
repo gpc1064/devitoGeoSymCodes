@@ -7,7 +7,7 @@ from devito.passes.clusters import (Lift, blocking, buffering, cire, cse,
                                     factorize, fission, fuse, optimize_pows,
                                     optimize_hyperplanes)
 from devito.passes.iet import (CTarget, OmpTarget, avoid_denormals, linearize, mpiize,
-                               hoist_prodders, relax_incr_dimensions)
+                               hoist_prodders, relax_incr_dimensions, ooc_efuncs)
 from devito.tools import timed_pass
 
 __all__ = ['Cpu64NoopCOperator', 'Cpu64NoopOmpOperator', 'Cpu64AdvCOperator',
@@ -103,7 +103,7 @@ class Cpu64NoopOperator(Cpu64OperatorMixin, CoreOperator):
         # Distributed-memory parallelism
         mpiize(graph, **kwargs)
         
-        #ooc_efuncs(graph, **kwargs)
+        ooc_efuncs(graph, **kwargs)
         
         # Shared-memory parallelism
         if options['openmp']:
@@ -174,6 +174,9 @@ class Cpu64AdvOperator(Cpu64OperatorMixin, CoreOperator):
 
         # Distributed-memory parallelism
         mpiize(graph, **kwargs)
+
+        # Out of Core
+        ooc_efuncs(graph, **kwargs)
 
         # Lower BlockDimensions so that blocks of arbitrary shape may be used
         relax_incr_dimensions(graph, **kwargs)

@@ -461,7 +461,7 @@ class Operator(Callable):
 
         # Lower IET to a target-specific IET
         graph = Graph(iet, sregistry=sregistry)
-        graph = cls._specialize_iet(graph, **kwargs)
+        graph = cls._specialize_iet(graph, profiler=profiler, **kwargs)
 
         # Instrument the IET for C-level profiling
         # Note: this is postponed until after _specialize_iet because during
