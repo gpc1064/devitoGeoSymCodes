@@ -1,8 +1,9 @@
 import numpy as np
 import ctypes as ct
 import cgen
-from sympy import Mod
 
+from pdb import set_trace
+from sympy import Mod
 from functools import reduce
 from collections import OrderedDict
 
@@ -99,6 +100,7 @@ def _ooc_build(iet_body, nthreads, profiler, out_of_core, is_mpi):
     
 
     ######## Build func_size var ########
+    set_trace()
     symbs = FindSymbols("symbolics").visit(iet_body)
     # TODO: Function name must come from user?
     funcStencil = next((symb for symb in symbs if symb.name == "u"), None)
@@ -120,7 +122,7 @@ def _ooc_build(iet_body, nthreads, profiler, out_of_core, is_mpi):
     ######## Build write_size var ########
     size_name = 'write_size' if is_forward else 'read_size'
     ioSize = Symbol(name=size_name, dtype=np.int64)
-    ioSizeExp = io_size_build(ioSize, func_size)
+    ioSizeExp = io_size_build(ioSize, func_size, funcStencil)
     
 
     ######## Build save call ########
@@ -394,7 +396,7 @@ def func_size_build(funcStencil, func_size):
 
     return funcSizeExp, floatSizeInit
 
-def io_size_build(ioSize, func_size):
+def io_size_build(ioSize, func_size, funcStencil):
     """
     Generates init expression calculating io_size.
 
@@ -407,10 +409,12 @@ def io_size_build(ioSize, func_size):
     """
 
     #TODO: Time limits must be retrieved
-    time_M = Symbol(name="time_M", dtype=np.int32)
-    time_m = Symbol(name="time_m", dtype=np.int32)
+    # time_M = Symbol(name="time_M", dtype=np.int32)
+    # time_m = Symbol(name="time_m", dtype=np.int32)
+    time_M = funcStencil.time_dim.symbolic_max
+    time_m = funcStencil.time_dim.symbolic_min
     #TODO: Field and pointer must be retrieved from somewhere
-    funcSize1 = FieldFromPointer("size[1]", "u_vec")
+    funcSize1 = FieldFromPointer(funcStencil.dimensions[1], funcStencil._C_name)
     
     ioSizeEq = IREq(ioSize, ((time_M - time_m+1) * funcSize1 * func_size))
 
