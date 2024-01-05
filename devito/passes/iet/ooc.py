@@ -146,6 +146,8 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, nameArray, is
         # TODO: initialize int myrank
         # TODO: initialize char error[140]
         myrank = Symbol(name="myrank", dtype=np.int32)
+        mrEq = IREq(myrank, 0)
+
         dps = Symbol(name="DPS", dtype=np.int32, ignoreDefinition=True)
         socket = Symbol(name="socket", dtype=np.int32)
         
@@ -155,7 +157,8 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, nameArray, is
         cNvmeIdEq = ClusterizedEq(nvmeIdEq, ispace=None)                  
         
         # TODO: MPI_COMM_WORLD as Macro. Try to find a berrer IR to &myrank 
-        itNodes.append(Call(name="MPI_Comm_rank", arguments=[Macro("MPI_COMM_WORLD"), Byref("&myrank")]))
+        itNodes.append(Expression(ClusterizedEq(mrEq), None, True))
+        itNodes.append(Call(name="MPI_Comm_rank", arguments=[Macro("MPI_COMM_WORLD"), Byref(myrank)]))
         itNodes.append(Expression(cSocketEq, None, True)) 
         itNodes.append(Expression(cNvmeIdEq, None, True)) 
         itNodes.append(Call(name="sprintf", arguments=[nameArray, String(r"'data/nvme%d/socket_%d_thread_%d.data'"), nvme_id, myrank, iSymbol]))
@@ -207,7 +210,6 @@ def ooc_efuncs(iet, **kwargs):
 
     nthreadsDim = CustomDimension(name="i", symbolic_size=nthreads) 
     filesArray = Array(name='files', dimensions=[nthreadsDim], dtype=np.int32, ignoreDefinition=True)
-    import pdb; pdb.set_trace()
     iSymbol = Symbol(name="i", dtype=np.int32)
 
     new_open_thread_call = Call(name='open_thread_files', arguments=[filesArray, nthreads])
