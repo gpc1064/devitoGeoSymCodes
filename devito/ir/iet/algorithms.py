@@ -104,7 +104,6 @@ def _ooc_build(iet_body, nthreads, profiler, out_of_core, is_mpi):
     funcStencil = next((symb for symb in symbs if symb.name == "u"), None)
     # TODO: Function name must come from user?
     func_size = Symbol(name="u_size", dtype=np.uint64) 
-    
     funcSizeExp, floatSizeInit = func_size_build(funcStencil, func_size)
 
     
@@ -127,9 +126,6 @@ def _ooc_build(iet_body, nthreads, profiler, out_of_core, is_mpi):
     ######## Build save call ########
     timerProfiler = Timer(profiler.name, [], ignoreDefinition=True)
     saveCall = Call(name='save_temp', arguments=[nthreads, timerProfiler, ioSize])
-    
-    saveCallable = save_build(nthreads, timerProfiler, ioSize, is_forward, is_mpi)
-    openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, is_mpi)
     
     #TODO: Generate blank lines between sections
     iet_body.insert(0, funcSizeExp)
@@ -339,186 +335,6 @@ def array_alloc_check(array):
     exitCall = Call(name="exit", arguments=1)
     return Conditional(CondEq(array, Macro('NULL')), [printfCall, exitCall])
     
-
-def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, is_forward, is_mpi):
-    """
-    This method generates the function open_thread_files according to the operator used.
-
-    Args:
-        nthreads (NThreads): number of threads
-        filesArray (Array): array of files
-        iSymbol (Symbol): symbol of the iterator index i 
-        nthreadsDim (CustomDimension): dimension i from 0 to nthreads
-        is_forward (bool): True for the Forward operator; False for the Gradient operator
-        is_mpi (bool): True for the use of MPI; False otherwise.
-
-    Returns:
-        Callable: the callable function open_thread_files
-    """
-    
-    itNodes=[]
-    ifNodes=[]
-    
-    # TODO: initialize char name[100]
-    nvme_id = Symbol(name="nvme_id", dtype=np.int32)
-    ndisks = Symbol(name="NDISKS", dtype=np.int32, ignoreDefinition=True)
-    nameDim = [CustomDimension(name="nameDim", symbolic_size=100)]
-    nameArray = Array(name='name', dimensions=nameDim, dtype=np.byte)
-        
-    opFlagsStr = String("OPEN_FLAGS")
-    flagsStr = String("S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH")
-    openCall = Call(name="open", arguments=[nameArray, opFlagsStr, flagsStr], retobj=filesArray[iSymbol])
-    
-    if is_mpi:
-        # TODO: initialize int myrank
-        # TODO: initialize char error[140]
-        myrank = Symbol(name="myrank", dtype=np.int32)
-        dps = Symbol(name="DPS", dtype=np.int32, ignoreDefinition=True)
-        socket = Symbol(name="socket", dtype=np.int32)
-        errorDim = [CustomDimension(name="errorDim", symbolic_size=140)]
-        errorArray = Array(name='error', dimensions=errorDim, dtype=np.byte)
-        
-        nvmeIdEq = IREq(nvme_id, Mod(iSymbol, ndisks)+socket)        
-        socketEq = IREq(socket, Mod(myrank, 2) * dps)
-        cSocketEq = ClusterizedEq(socketEq, ispace=None)
-        cNvmeIdEq = ClusterizedEq(nvmeIdEq, ispace=None)                  
-        
-        # TODO: MPI_COMM_WORLD as Macro. Try to find a berrer IR to &myrank 
-        itNodes.append(Call(name="MPI_Comm_rank", arguments=[String("MPI_COMM_WORLD"), String("&myrank")]))
-        itNodes.append(Expression(cSocketEq, None, True)) 
-        itNodes.append(Expression(cNvmeIdEq, None, True)) 
-        itNodes.append(Call(name="sprintf", arguments=[nameArray, String(r"'data/nvme%d/socket_%d_thread_%d.data'"), nvme_id, myrank, iSymbol]))
-    else:
-        nvmeIdEq = IREq(nvme_id, Mod(iSymbol, ndisks))
-        cNvmeIdEq = ClusterizedEq(nvmeIdEq, ispace=None)
-        
-        itNodes.append(Expression(cNvmeIdEq, None, True))   
-        itNodes.append(Call(name="sprintf", arguments=[nameArray, String(r"'data/nvme%d/thread_%d.data'"), nvme_id, iSymbol]))
-        
-    
-    if is_forward:
-        itNodes.append(Call(name="printf", arguments=[String(r"'Creating file %s\n'"), nameArray]))
-    else:
-        itNodes.append(Call(name="printf", arguments=[String(r"'Reading file %s\n'"), nameArray]))
-
-
-    ifNodes.append(Call(name="perror", arguments=String(r"'Cannot open output file\n'")))
-    ifNodes.append(Call(name="exit", arguments=1))
-    openCond = Conditional(CondEq(filesArray[iSymbol], -1), ifNodes) 
-    
-    itNodes.append(openCall)   
-    
-    itNodes.append(openCond)
-
-    openIteration = Iteration(itNodes, nthreadsDim, nthreads-1)
-    
-    body = CallableBody(openIteration)
-    callable = Callable("open_thread_files", body, "void", [filesArray, nthreads])
-
-    return callable
-
-
-def save_build(nthreads, timerProfiler, size, is_forward, is_mpi):
-    """
-    This method generates the function save according to the operator used.
-
-    Args:
-        nthreads (Nthreads): number of threads
-        timerProfiler (Timer): a Timer to represent a profiler
-        size (Symbol): a symbol which represents write_size or read_size
-        is_forward (bool): True for the Forward operator; False for the Gradient operator
-        is_mpi (bool): True for the use of MPI; False otherwise.
-
-    Returns:
-        Callable: the callable function save
-    """
-    
-    funcNodes = []
-    
-    if is_mpi:
-        if is_forward:
-            opStrTitle = String("'>>>>>>>>>>>>>> MPI FORWARD <<<<<<<<<<<<<<<<<\n'")
-            tagOp = "FWD"
-            operation = "write"
-        else:
-            opStrTitle = String("'>>>>>>>>>>>>>> MPI REVERSE <<<<<<<<<<<<<<<<<\n'")
-            tagOp = "REV"
-            operation = "read"            
-    else:
-        if is_forward:
-            opStrTitle = String("'>>>>>>>>>>>>>> FORWARD <<<<<<<<<<<<<<<<<\n'")
-            tagOp = "FWD"
-            operation = "write"
-        else:
-            opStrTitle = String("'>>>>>>>>>>>>>> REVERSE <<<<<<<<<<<<<<<<<\n'")
-            tagOp = "REV"
-            operation = "read"  
-        
-    funcNodes.append(Call(name="printf", arguments=[opStrTitle]))
-    
-    if is_mpi:
-        # TODO: Found a better IR to &myrank
-        myrank = Symbol(name="myrank", dtype=np.int32)
-        funcNodes.append(Call(name="MPI_Comm_rank", arguments=[Macro("MPI_COMM_WORLD"), Byref(myrank)]))
-        funcNodes.append(Conditional(CondNe(myrank, 0), Return()))
-
-    pstring = String(r"'Threads %d\n'")
-    funcNodes.append(Call(name="printf", arguments=[pstring, nthreads]))
-
-    pstring = String(r"'Disks %d\n'")
-    ndisksStr = String("NDISKS")
-    funcNodes.append(Call(name="printf", arguments=[pstring, ndisksStr]))
-
-    # Must retrieve section names from somewhere
-    tSec0 = FieldFromPointer("section0", timerProfiler)
-    tSec1 = FieldFromPointer("section1", timerProfiler)
-    tSec2 = FieldFromPointer("section2", timerProfiler)
-    tOpen = FieldFromPointer("open", timerProfiler)
-    tOp = FieldFromPointer(operation, timerProfiler)
-    tClose = FieldFromPointer("close", timerProfiler)    
-
-    pstring = String(fr"'[{tagOp}] Section0 %.2lf s\n'")
-    funcNodes.append(Call(name="printf", arguments=[pstring, tSec0]))
-
-    pstring = String(fr"'[{tagOp}] Section1 %.2lf s\n'")
-    funcNodes.append(Call(name="printf", arguments=[pstring, tSec1]))
-
-    pstring = String(fr"'[{tagOp}] Section2 %.2lf s\n'")
-    funcNodes.append(Call(name="printf", arguments=[pstring, tSec2])) 
-
-    pstring = String(r"'[IO] Open %.2lf s\n'")
-    funcNodes.append(Call(name="printf", arguments=[pstring, tOpen]))
-
-    pstring = String(fr"'[IO] {operation.title()} %.2lf s\n'")
-    funcNodes.append(Call(name="printf", arguments=[pstring, tOp]))
-
-    pstring = String(r"'[IO] Close %.2lf s\n'")
-    funcNodes.append(Call(name="printf", arguments=[pstring, tClose]))
-    
-    nameDim = [CustomDimension(name="nameDim", symbolic_size=100)]
-    nameArray = Array(name='name', dimensions=nameDim, dtype=np.byte)
-
-    fileOpenNodes = []
-    pstring = String(fr"'{tagOp.lower()}_disks_%d_threads_%d.csv'")
-    fileOpenNodes.append(Call(name="sprintf", arguments=[nameArray, pstring, ndisksStr, nthreads]))
-
-    pstring = String(r"'w'")
-    filePointer = Pointer(name="ftp", dtype=FILE)
-    fileOpenNodes.append(Call(name="fopen", arguments=[nameArray, pstring], retobj=filePointer))
-
-    filePrintNodes = []
-    pstring = String(fr"'Disks, Threads, Bytes, [{tagOp}] Section0, [{tagOp}] Section1, [{tagOp}] Section2, [IO] Open, [IO] {operation.title()}, [IO] Close\n'")
-    filePrintNodes.append(Call(name="fprintf", arguments=[filePointer, pstring]))
-    
-    pstring = String(r"'%d, %d, %ld, %.2lf, %.2lf, %.2lf, %.2lf, %.2lf, %.2lf\n'")
-    filePrintNodes.append(Call(name="fprintf", arguments=[filePointer, pstring, ndisksStr, nthreads, size,
-                                                          tSec0, tSec1, tSec2, tOpen, tOp, tClose]))
-
-    body = funcNodes+fileOpenNodes+filePrintNodes
-    saveCallBody = CallableBody(body)
-    saveCallable = Callable("save", saveCallBody, "void", [nthreads, timerProfiler, size])
-
-    return saveCallable
 
 def write_or_read_build(iet_body, is_forward, nthreads, filesArray, iSymbol, func_size, funcStencil, t0, countersArray, is_mpi):
     """
