@@ -194,7 +194,7 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, nameArray, is
 
 @iet_pass
 def ooc_efuncs(iet, **kwargs):
-    is_forward = kwargs['options']['out-of-core'] == 'forward'
+    is_forward = kwargs['options']['out-of-core'].mode == 'forward'
     is_mpi = kwargs['options']['mpi']
     profiler_name = kwargs['profiler'].name
 

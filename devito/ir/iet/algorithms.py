@@ -26,7 +26,7 @@ def iet_build(stree, **kwargs):
     Construct an Iteration/Expression tree(IET) from a ScheduleTree.
     """
 
-    out_of_core = kwargs['options']['out-of-core']
+    ooc = kwargs['options']['out-of-core']
     is_mpi = kwargs['options']['mpi']
     
     nsections = 0
@@ -35,8 +35,8 @@ def iet_build(stree, **kwargs):
         if i == stree:
             # We hit this handle at the very end of the visit
             iet_body = queues.pop(i)
-            if(out_of_core):
-                iet_body = _ooc_build(iet_body, kwargs['sregistry'].nthreads, kwargs['profiler'], out_of_core, is_mpi)
+            if(ooc):
+                iet_body = _ooc_build(iet_body, kwargs['sregistry'].nthreads, kwargs['profiler'], ooc.function, ooc.mode, is_mpi)
                 return List(body=iet_body)
             else:                
                 return List(body=iet_body)
@@ -55,9 +55,9 @@ def iet_build(stree, **kwargs):
 
         elif i.is_Iteration:
             iteration_nodes = [queues.pop(i)]
-            if isinstance(i.dim, TimeDimension) and out_of_core == 'forward':
+            if isinstance(i.dim, TimeDimension) and ooc and ooc.mode == 'forward':
                 iteration_nodes.append(Section("write_temp"))
-            elif isinstance(i.dim, TimeDimension) and out_of_core == 'gradient':
+            elif isinstance(i.dim, TimeDimension) and ooc and ooc.mode == 'gradient':
                 iteration_nodes.append(Section("read_temp"))
 
             body = Iteration(iteration_nodes, i.dim, i.limits, direction=i.direction,
@@ -79,7 +79,7 @@ def iet_build(stree, **kwargs):
 
 
 @timed_pass(name='ooc_build')
-def _ooc_build(iet_body, nthreads, profiler, out_of_core, is_mpi):
+def _ooc_build(iet_body, nthreads, profiler, func, out_of_core, is_mpi):
     # Creates nthreads once again in order to enable the ignoreDefinition flag
     #nthreads = NThreads(ignoreDefinition=True)
     
@@ -100,19 +100,14 @@ def _ooc_build(iet_body, nthreads, profiler, out_of_core, is_mpi):
     
 
     ######## Build func_size var ########
-    set_trace()
-    symbs = FindSymbols("symbolics").visit(iet_body)
-    # TODO: Function name must come from user?
-    funcStencil = next((symb for symb in symbs if symb.name == "u"), None)
-    # TODO: Function name must come from user?
+    # TODO: Symbol name must derive from function name. u -> u_size; f -> f_size; etc...
     func_size = Symbol(name="u_size", dtype=np.uint64) 
-    funcSizeExp, floatSizeInit = func_size_build(funcStencil, func_size)
+    funcSizeExp, floatSizeInit = func_size_build(func, func_size)
 
-    
     ######## Build write/read section ########
     dims = FindSymbols("dimensions").visit(iet_body)
     t0 = next((dim for dim in dims if dim.name == "t0"), None)
-    write_or_read_build(iet_body, is_forward, nthreads, filesArray, iSymbol, func_size, funcStencil, t0, countersArray, is_mpi)
+    write_or_read_build(iet_body, is_forward, nthreads, filesArray, iSymbol, func_size, func, t0, countersArray, is_mpi)
     
 
     ######## Build close section ########
@@ -122,7 +117,7 @@ def _ooc_build(iet_body, nthreads, profiler, out_of_core, is_mpi):
     ######## Build write_size var ########
     size_name = 'write_size' if is_forward else 'read_size'
     ioSize = Symbol(name=size_name, dtype=np.int64)
-    ioSizeExp = io_size_build(ioSize, func_size, funcStencil)
+    ioSizeExp = io_size_build(ioSize, func_size, func)
     
 
     ######## Build save call ########
