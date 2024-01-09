@@ -100,8 +100,8 @@ def _ooc_build(iet_body, nthreads, profiler, func, out_of_core, is_mpi):
     
 
     ######## Build func_size var ########
-    # TODO: Symbol name must derive from function name. u -> u_size; f -> f_size; etc...
-    func_size = Symbol(name="u_size", dtype=np.uint64) 
+    func_name = func.name
+    func_size = Symbol(name=func_name+"_size", dtype=np.uint64) 
     funcSizeExp, floatSizeInit = func_size_build(func, func_size)
 
     ######## Build write/read section ########
