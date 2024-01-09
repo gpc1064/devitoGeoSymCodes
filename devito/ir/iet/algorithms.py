@@ -80,6 +80,22 @@ def iet_build(stree, **kwargs):
 
 @timed_pass(name='ooc_build')
 def _ooc_build(iet_body, nthreads, profiler, func, out_of_core, is_mpi):
+    """
+    This private method builds a iet_body (list) with out-of-core nodes.
+
+    Args:
+        iet_body (List): a list of nodes
+        nthreads (NThreads): an object of devito threads
+        profiler (Profiler): a devito profiler
+        func (Function): the function
+        out_of_core (string): 'forward' or 'gradient'
+        is_mpi (bool): flag of MPI execution
+
+    Returns:
+        List : iet_body is a list of nodes
+    """
+    
+    set_trace()
     # Creates nthreads once again in order to enable the ignoreDefinition flag
     #nthreads = NThreads(ignoreDefinition=True)
     
