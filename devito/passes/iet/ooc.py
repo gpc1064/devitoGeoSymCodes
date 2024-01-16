@@ -30,20 +30,20 @@ def save_build(nthreads, timerProfiler, io_size, nameArray, is_forward, is_mpi):
     
     if is_mpi:
         if is_forward:
-            opStrTitle = String(r"'>>>>>>>>>>>>>> MPI FORWARD <<<<<<<<<<<<<<<<<\n'")
+            opStrTitle = String("\">>>>>>>>>>>>>> MPI FORWARD <<<<<<<<<<<<<<<<<\\n\"")
             tagOp = "FWD"
             operation = "write"
         else:
-            opStrTitle = String(r"'>>>>>>>>>>>>>> MPI REVERSE <<<<<<<<<<<<<<<<<\n'")
+            opStrTitle = String("\">>>>>>>>>>>>>> MPI REVERSE <<<<<<<<<<<<<<<<<\\n\"")
             tagOp = "REV"
             operation = "read"            
     else:
         if is_forward:
-            opStrTitle = String(r"'>>>>>>>>>>>>>> FORWARD <<<<<<<<<<<<<<<<<\n'")
+            opStrTitle = String("\">>>>>>>>>>>>>> FORWARD <<<<<<<<<<<<<<<<<\\n\"")
             tagOp = "FWD"
             operation = "write"
         else:
-            opStrTitle = String(r"'>>>>>>>>>>>>>> REVERSE <<<<<<<<<<<<<<<<<\n'")
+            opStrTitle = String("\">>>>>>>>>>>>>> REVERSE <<<<<<<<<<<<<<<<<\\n\"")
             tagOp = "REV"
             operation = "read"  
         
@@ -57,10 +57,10 @@ def save_build(nthreads, timerProfiler, io_size, nameArray, is_forward, is_mpi):
 
     funcNodes.append(Call(name="printf", arguments=[opStrTitle]))
     
-    pstring = String(r"'Threads %d\n'")
+    pstring = String("\"Threads %d\\n\"")
     funcNodes.append(Call(name="printf", arguments=[pstring, nthreads]))
 
-    pstring = String(r"'Disks %d\n'")
+    pstring = String("\"Disks %d\\n\"")
     ndisksStr = String("NDISKS")
     funcNodes.append(Call(name="printf", arguments=[pstring, ndisksStr]))
 
@@ -72,38 +72,38 @@ def save_build(nthreads, timerProfiler, io_size, nameArray, is_forward, is_mpi):
     tOp = FieldFromPointer(operation, timerProfiler)
     tClose = FieldFromPointer("close", timerProfiler)    
 
-    pstring = String(fr"'[{tagOp}] Section0 %.2lf s\n'")
+    pstring = String(f"\"[{tagOp}] Section0 %.2lf s\\n\"")
     funcNodes.append(Call(name="printf", arguments=[pstring, tSec0]))
 
-    pstring = String(fr"'[{tagOp}] Section1 %.2lf s\n'")
+    pstring = String(f"\"[{tagOp}] Section1 %.2lf s\\n\"")
     funcNodes.append(Call(name="printf", arguments=[pstring, tSec1]))
 
-    pstring = String(fr"'[{tagOp}] Section2 %.2lf s\n'")
+    pstring = String(f"\"[{tagOp}] Section2 %.2lf s\\n\"")
     funcNodes.append(Call(name="printf", arguments=[pstring, tSec2])) 
 
-    pstring = String(r"'[IO] Open %.2lf s\n'")
+    pstring = String("\"[IO] Open %.2lf s\\n\"")
     funcNodes.append(Call(name="printf", arguments=[pstring, tOpen]))
 
-    pstring = String(fr"'[IO] {operation.title()} %.2lf s\n'")
+    pstring = String(f"\"[IO] {operation.title()} %.2lf s\\n\"")
     funcNodes.append(Call(name="printf", arguments=[pstring, tOp]))
 
-    pstring = String(r"'[IO] Close %.2lf s\n'")
+    pstring = String("\"[IO] Close %.2lf s\\n\"")
     funcNodes.append(Call(name="printf", arguments=[pstring, tClose]))
     
 
     fileOpenNodes = []
-    pstring = String(fr"'{tagOp.lower()}_disks_%d_threads_%d.csv'")
+    pstring = String(f"\"{tagOp.lower()}_disks_%d_threads_%d.csv\"")
     fileOpenNodes.append(Call(name="sprintf", arguments=[nameArray, pstring, ndisksStr, nthreads]))
 
-    pstring = String(r"'w'")
+    pstring = String("\"w\"")
     filePointer = Pointer(name="fpt", dtype=FILE)
     fileOpenNodes.append(Call(name="fopen", arguments=[nameArray, pstring], retobj=filePointer))
 
     filePrintNodes = []
-    pstring = String(fr"'Disks, Threads, Bytes, [{tagOp}] Section0, [{tagOp}] Section1, [{tagOp}] Section2, [IO] Open, [IO] {operation.title()}, [IO] Close\n'")
+    pstring = String(f"\"Disks, Threads, Bytes, [{tagOp}] Section0, [{tagOp}] Section1, [{tagOp}] Section2, [IO] Open, [IO] {operation.title()}, [IO] Close\\n\"")
     filePrintNodes.append(Call(name="fprintf", arguments=[filePointer, pstring]))
     
-    pstring = String(r"'%d, %d, %ld, %.2lf, %.2lf, %.2lf, %.2lf, %.2lf, %.2lf\n'")
+    pstring = String("\"%d, %d, %ld, %.2lf, %.2lf, %.2lf, %.2lf, %.2lf, %.2lf\\n\"")
     filePrintNodes.append(Call(name="fprintf", arguments=[filePointer, pstring, ndisksStr, nthreads, io_size,
                                                           tSec0, tSec1, tSec2, tOpen, tOp, tClose]))
 
@@ -161,22 +161,22 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, nameArray, is
         itNodes.append(Call(name="MPI_Comm_rank", arguments=[Macro("MPI_COMM_WORLD"), Byref(myrank)]))
         itNodes.append(Expression(cSocketEq, None, True)) 
         itNodes.append(Expression(cNvmeIdEq, None, True)) 
-        itNodes.append(Call(name="sprintf", arguments=[nameArray, String(r"'data/nvme%d/socket_%d_thread_%d.data'"), nvme_id, myrank, iSymbol]))
+        itNodes.append(Call(name="sprintf", arguments=[nameArray, String("\"data/nvme%d/socket_%d_thread_%d.data\""), nvme_id, myrank, iSymbol]))
     else:
         nvmeIdEq = IREq(nvme_id, Mod(iSymbol, ndisks))
         cNvmeIdEq = ClusterizedEq(nvmeIdEq, ispace=None)
         
         itNodes.append(Expression(cNvmeIdEq, None, True))   
-        itNodes.append(Call(name="sprintf", arguments=[nameArray, String(r"'data/nvme%d/thread_%d.data'"), nvme_id, iSymbol]))
+        itNodes.append(Call(name="sprintf", arguments=[nameArray, String("\"data/nvme%d/thread_%d.data\""), nvme_id, iSymbol]))
         
     
     if is_forward:
-        itNodes.append(Call(name="printf", arguments=[String(r"'Creating file %s\n'"), nameArray]))
+        itNodes.append(Call(name="printf", arguments=[String("\"Creating file %s\\n\""), nameArray]))
     else:
-        itNodes.append(Call(name="printf", arguments=[String(r"'Reading file %s\n'"), nameArray]))
+        itNodes.append(Call(name="printf", arguments=[String("\"Reading file %s\\n\""), nameArray]))
 
 
-    ifNodes.append(Call(name="perror", arguments=String(r"'Cannot open output file\n'")))
+    ifNodes.append(Call(name="perror", arguments=String("\"Cannot open output file\\n\"")))
     ifNodes.append(Call(name="exit", arguments=1))
     openCond = Conditional(CondEq(filesArray[iSymbol], -1), ifNodes) 
     

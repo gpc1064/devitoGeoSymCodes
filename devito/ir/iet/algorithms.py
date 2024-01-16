@@ -95,7 +95,6 @@ def _ooc_build(iet_body, nthreads, profiler, func, out_of_core, is_mpi):
         List : iet_body is a list of nodes
     """
     
-    set_trace()
     # Creates nthreads once again in order to enable the ignoreDefinition flag
     #nthreads = NThreads(ignoreDefinition=True)
     
@@ -218,7 +217,7 @@ def write_build(nthreads, filesArray, iSymbol, func_size, funcStencil, t0, uVecS
     writeCall = Call(name="write", arguments=[filesArray[tid], funcStencil[t0, iSymbol], func_size], retobj=ret)
     itNodes.append(writeCall)
     
-    pstring = String("'Write size mismatch with function slice size'")
+    pstring = String("\"Write size mismatch with function slice size\"")
 
     condNodes = [Call(name="perror", arguments=pstring)]
     condNodes.append(Call(name="exit", arguments=1))
@@ -287,7 +286,7 @@ def read_build(nthreads, filesArray, iSymbol, func_size, funcStencil, t0, uVecSi
     # perror("Cannot open output file");
     # exit(1);
     pret = String("'%d', ret")
-    pstring = String("'Cannot open output file'")
+    pstring = String("\"Cannot open output file\"")
     condNodes = [
         Call(name="printf", arguments=pret),
         Call(name="perror", arguments=pstring), 
@@ -343,7 +342,7 @@ def array_alloc_check(array):
         Conditional: condition to handle allocated array
     """
     
-    pstring = String("'Error to alloc'")
+    pstring = String("\"Error to alloc\"")
     printfCall = Call(name="printf", arguments=pstring)
     exitCall = Call(name="exit", arguments=1)
     return Conditional(CondEq(array, Macro('NULL')), [printfCall, exitCall])
