@@ -202,7 +202,7 @@ class Operator(Callable):
         if out_of_core: 
             if is_forward:
                 if is_mpi:
-                    _out_of_core_headers_forward[1] = (("ifndef", "NDISKS"), ("NDISKS", "4"))
+                    cls._out_of_core_headers_forward[1] = (("ifndef", "NDISKS"), ("NDISKS", "4"))
                 op._headers.update(cls._out_of_core_headers_forward)
             else:
                 op._headers.update(cls._out_of_core_headers_gradient)
