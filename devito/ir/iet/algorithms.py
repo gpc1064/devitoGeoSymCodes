@@ -413,20 +413,16 @@ def io_size_build(ioSize, func_size, funcStencil):
     Args:
         ioSize (Symbol): Symbol representing the total amount of I/O data
         func_size (Symbol): Symbol representing the I/O function size
+        funcStencil (Function): function signature (Ex.: func(t, x, y, z))
 
     Returns:
         funcSizeExp: Expression initializing ioSize
     """
-    
+
     time_M = funcStencil.time_dim.symbolic_max
     time_m = funcStencil.time_dim.symbolic_min
     
-    first_space_dim_index = 0
-    for dim in funcStencil.dimensions:
-        if isinstance(dim, SpaceDimension):
-            break
-        else:
-            first_space_dim_index += 1
+    first_space_dim_index = _get_first_space_dim_index(funcStencil.dimensions)
     
     #TODO: Field and pointer must be retrieved from somewhere
     funcSize1 = FieldFromPointer(f"size[{first_space_dim_index}]", funcStencil._C_name)
@@ -434,3 +430,24 @@ def io_size_build(ioSize, func_size, funcStencil):
     ioSizeEq = IREq(ioSize, ((time_M - time_m+1) * funcSize1 * func_size))
 
     return Expression(ClusterizedEq(ioSizeEq, ispace=None), None, True)
+
+
+def _get_first_space_dim_index(dimensions):
+    """
+    This method returns the index of the first space dimension of the Function.
+
+    Args:
+        dimensions (tuple): dimensions
+
+    Returns:
+        int: index
+    """
+    
+    first_space_dim_index = 0
+    for dim in dimensions:
+        if isinstance(dim, SpaceDimension):
+            break
+        else:
+            first_space_dim_index += 1
+    
+    return first_space_dim_index
