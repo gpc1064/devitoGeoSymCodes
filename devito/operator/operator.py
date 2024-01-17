@@ -138,9 +138,12 @@ class Operator(Callable):
     _default_globals = []
     
     _out_of_core_mpi_headers=[(("ifndef", "DPS"), ("DPS", "4"))]
-    _out_of_core_headers=[("_GNU_SOURCE", ""),
-                          (("ifndef", "NDISKS"), ("NDISKS", "8")), #Find a way to replace 8 by a parameter
-                          (("ifdef", "CACHE"), ("OPEN_FLAGS", "O_WRONLY | O_CREAT"), ("else", ), ("OPEN_FLAGS", "O_DIRECT | O_WRONLY | O_CREAT"))]
+    _out_of_core_headers_forward=[("_GNU_SOURCE", ""),
+                                  (("ifndef", "NDISKS"), ("NDISKS", "8")), #Find a way to replace 8 by a parameter
+                                  (("ifdef", "CACHE"), ("OPEN_FLAGS", "O_WRONLY | O_CREAT"), ("else", ), ("OPEN_FLAGS", "O_DIRECT | O_WRONLY | O_CREAT"))]
+    _out_of_core_headers_gradient=[("_GNU_SOURCE", ""),
+                                   (("ifndef", "NDISKS"), ("NDISKS", "8")), #Find a way to replace 8 by a parameter
+                                   (("ifdef", "CACHE"), ("OPEN_FLAGS", "O_RDONLY"), ("else", ), ("OPEN_FLAGS", "O_DIRECT | O_RDONLY"))]
     _out_of_core_includes = ["fcntl.h"]
 
     def __new__(cls, expressions, **kwargs):
@@ -183,6 +186,7 @@ class Operator(Callable):
         profiler = create_profile('timers')
 
         out_of_core = kwargs['options']['out-of-core']
+        is_forward = out_of_core.mode == 'forward'
         is_mpi = kwargs['options']['mpi']
 
         # Lower the input expressions into an IET
@@ -195,8 +199,15 @@ class Operator(Callable):
         # Header files, etc.
         op._headers = OrderedSet(*cls._default_headers)
         op._headers.update(byproduct.headers)
-        if out_of_core: op._headers.update(cls._out_of_core_headers)
-        if is_mpi: op._headers.update(cls._out_of_core_mpi_headers)
+        if out_of_core: 
+            if is_forward:
+                if is_mpi:
+                    _out_of_core_headers_forward[1] = (("ifndef", "NDISKS"), ("NDISKS", "4"))
+                op._headers.update(cls._out_of_core_headers_forward)
+            else:
+                op._headers.update(cls._out_of_core_headers_gradient)
+        if is_mpi: 
+            op._headers.update(cls._out_of_core_mpi_headers)
         op._globals = OrderedSet(*cls._default_globals)
         op._globals.update(byproduct.globals)
         op._includes = OrderedSet(*cls._default_includes)
