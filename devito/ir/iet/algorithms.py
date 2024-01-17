@@ -10,7 +10,7 @@ from collections import OrderedDict
 from devito.tools import timed_pass
 from devito.symbolics import (CondEq, CondNe, Macro, String)
 from devito.symbolics.extended_sympy import (FieldFromPointer, Byref)
-from devito.types import CustomDimension, Array, Symbol, Pointer, FILE, Timer, NThreads, TimeDimension
+from devito.types import CustomDimension, Array, Symbol, Pointer, FILE, Timer, NThreads, TimeDimension, SpaceDimension
 from devito.ir.iet import (Expression, Increment, Iteration, List, Conditional, SyncSpot,
                            Section, HaloSpot, ExpressionBundle, Call, Conditional, CallableBody, 
                            Callable, FindSymbols, FindNodes, Transformer, Return)
@@ -417,14 +417,19 @@ def io_size_build(ioSize, func_size, funcStencil):
     Returns:
         funcSizeExp: Expression initializing ioSize
     """
-
-    #TODO: Time limits must be retrieved
-    # time_M = Symbol(name="time_M", dtype=np.int32)
-    # time_m = Symbol(name="time_m", dtype=np.int32)
+    
     time_M = funcStencil.time_dim.symbolic_max
     time_m = funcStencil.time_dim.symbolic_min
+    
+    first_space_dim_index = 0
+    for dim in funcStencil.dimensions:
+        if isinstance(dim, SpaceDimension):
+            break
+        else:
+            first_space_dim_index += 1
+    
     #TODO: Field and pointer must be retrieved from somewhere
-    funcSize1 = FieldFromPointer(funcStencil.dimensions[1], funcStencil._C_name)
+    funcSize1 = FieldFromPointer(f"size[{first_space_dim_index}]", funcStencil._C_name)
     
     ioSizeEq = IREq(ioSize, ((time_M - time_m+1) * funcSize1 * func_size))
 
