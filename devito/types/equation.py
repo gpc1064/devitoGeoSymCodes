@@ -71,6 +71,8 @@ class Eq(sympy.Eq, Evaluable):
         obj._substitutions = coefficients
         obj._implicit_dims = as_tuple(implicit_dims)
 
+        obj.grad_eq = kwargs.get("grad_eq", False)
+
         return obj
 
     def _evaluate(self, **kwargs):

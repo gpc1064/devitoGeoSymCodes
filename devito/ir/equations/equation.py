@@ -136,6 +136,7 @@ class LoweredEq(IREq):
             expr = sympy.Eq.__new__(cls, *input_expr.args, evaluate=False)
             for i in cls.__rkwargs__:
                 setattr(expr, '_%s' % i, kwargs.get(i) or getattr(input_expr, i))
+            expr.grad_eq = kwargs.get("grad_eq") if "grad_eq" in kwargs else input_expr.grad_eq
             return expr
         elif len(args) == 1 and isinstance(args[0], Eq):
             # origin: LoweredEq(devito.Eq)
@@ -144,6 +145,7 @@ class LoweredEq(IREq):
             expr = sympy.Eq.__new__(cls, *args, evaluate=False)
             for i in cls.__rkwargs__:
                 setattr(expr, '_%s' % i, kwargs.pop(i))
+            expr.grad_eq = kwargs.get("grad_eq", False)
             return expr
         else:
             raise ValueError("Cannot construct LoweredEq from args=%s "
@@ -198,6 +200,7 @@ class LoweredEq(IREq):
         expr._reads, expr._writes = detect_io(expr)
         expr._implicit_dims = input_expr.implicit_dims
         expr._operation = Operation.detect(input_expr)
+        expr.grad_eq = kwargs.get("grad_eq") if "grad_eq" in kwargs else input_expr.grad_eq
 
         return expr
 

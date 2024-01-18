@@ -32,6 +32,7 @@ def iet_build(stree, **kwargs):
     nsections = 0
     queues = OrderedDict()
     for i in stree.visit():
+        import pdb; pdb.set_trace()
         if i == stree:
             # We hit this handle at the very end of the visit
             iet_body = queues.pop(i)
