@@ -112,11 +112,9 @@ def _ooc_build(iet_body, nthreads, profiler, func, out_of_core, is_mpi):
 
     ######## Build open section ########
     openSection = open_build(filesArray, countersArray, nthreadsDim, nthreads, is_forward, iSymbol)
-    
 
     ######## Build func_size var ########
-    func_name = func.name
-    func_size = Symbol(name=func_name+"_size", dtype=np.uint64) 
+    func_size = Symbol(name=func.name+"_size", dtype=np.uint64) 
     funcSizeExp, floatSizeInit = func_size_build(func, func_size)
 
     ######## Build write/read section ########
@@ -365,7 +363,7 @@ def write_or_read_build(iet_body, is_forward, nthreads, filesArray, iSymbol, fun
         countersArray (array): pointer of allocated memory of nthreads dimension. Each place has a size of int
 
     """
-
+    
     if is_forward:
         ooc_section = write_build(nthreads, filesArray, iSymbol, func_size, funcStencil, t0, funcStencil.symbolic_shape[1], is_mpi)
         temp_name = 'write_temp'
@@ -425,7 +423,8 @@ def io_size_build(ioSize, func_size, funcStencil):
     first_space_dim_index = _get_first_space_dim_index(funcStencil.dimensions)
     
     #TODO: Field and pointer must be retrieved from somewhere
-    funcSize1 = FieldFromPointer(f"size[{first_space_dim_index}]", funcStencil._C_name)
+    # funcSize1 = FieldFromPointer(f"size[{first_space_dim_index}]", funcStencil._C_name)
+    funcSize1 = funcStencil.symbolic_shape[first_space_dim_index]
     
     ioSizeEq = IREq(ioSize, ((time_M - time_m+1) * funcSize1 * func_size))
 
