@@ -257,11 +257,14 @@ class ClusterizedEq(IREq):
                 expr._conditionals = kwargs.get('conditionals', frozendict())
                 expr._implicit_dims = input_expr.implicit_dims
                 expr._operation = Operation.detect(input_expr)
+            
+            expr.grad_eq = kwargs.get("grad_eq") if "grad_eq" in kwargs else input_expr.grad_eq
         elif len(args) == 2:
             # origin: ClusterizedEq(lhs, rhs, **kwargs)
             expr = sympy.Eq.__new__(cls, *args, evaluate=False)
             for i in cls.__rkwargs__:
                 setattr(expr, '_%s' % i, kwargs.pop(i))
+            expr.grad_eq = kwargs.get("grad_eq", False)
         else:
             raise ValueError("Cannot construct ClusterizedEq from args=%s "
                              "and kwargs=%s" % (str(args), str(kwargs)))

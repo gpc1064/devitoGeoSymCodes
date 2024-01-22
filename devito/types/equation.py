@@ -88,7 +88,8 @@ class Eq(sympy.Eq, Evaluable):
             lhs, rhs = self._evaluate_args(**kwargs)
         eq = self.func(lhs, rhs, subdomain=self.subdomain,
                        coefficients=self.substitutions,
-                       implicit_dims=self._implicit_dims)
+                       implicit_dims=self._implicit_dims,
+                       grad_eq=self.grad_eq)
 
         if eq._uses_symbolic_coefficients:
             # NOTE: As Coefficients.py is expanded we will not want
