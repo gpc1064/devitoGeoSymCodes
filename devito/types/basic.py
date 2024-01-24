@@ -517,7 +517,6 @@ class DataSymbol(AbstractSymbol, Uncached):
 
         # Initialization
         newobj._dtype = cls.__dtype_setup__(**kwargs)
-        newobj.ignoreDefinition = cls.__ignoreDefinition_setup__(**kwargs)
         newobj.__init_finalize__(*args, **kwargs)
 
         return newobj

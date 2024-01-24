@@ -10,7 +10,7 @@ from collections import OrderedDict
 from devito.tools import timed_pass
 from devito.symbolics import (CondEq, CondNe, Macro, String)
 from devito.symbolics.extended_sympy import (FieldFromPointer, Byref)
-from devito.types import CustomDimension, Array, Symbol, Pointer, FILE, Timer, NThreads, TimeDimension, SpaceDimension
+from devito.types import CustomDimension, Array, Symbol, Pointer, FILE, Timer, NThreads, TimeDimension, SpaceDimension, Scalar, Constant
 from devito.ir.iet import (Expression, Increment, Iteration, List, Conditional, SyncSpot,
                            Section, HaloSpot, ExpressionBundle, Call, Conditional, CallableBody, 
                            Callable, FindSymbols, FindNodes, Transformer, Return)
@@ -103,9 +103,12 @@ def _ooc_build(iet_body, nthreads, profiler, func, out_of_core, is_mpi):
     ######## Dimension and symbol for iteration spaces ########
     nthreadsDim = CustomDimension(name="i", symbolic_size=nthreads)    
     iSymbol = Symbol(name="i", dtype=np.int32)
+    
+    # testScalar = Scalar(name="testScalar", ignoreDefinition=True)
 
 
     ######## Build files and counters arrays ########
+    set_trace()
     filesArray = Array(name='files', dimensions=[nthreadsDim], dtype=np.int32)
     countersArray = Array(name='counters', dimensions=[nthreadsDim], dtype=np.int32)
 
