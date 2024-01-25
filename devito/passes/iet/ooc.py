@@ -205,8 +205,8 @@ def ooc_efuncs(iet, **kwargs):
     nameDim = [CustomDimension(name="nameDim", symbolic_size=100)]
     nameArray = Array(name='name', dimensions=nameDim, dtype=np.byte)
 
-    new_save_call = Call(name="save", arguments=[nthreads, timerProfiler, io_size])
-    saveCallable = save_build(nthreads, timerProfiler, io_size, nameArray, is_forward, is_mpi)
+    # new_save_call = Call(name="save", arguments=[nthreads, timerProfiler, io_size])
+    # saveCallable = save_build(nthreads, timerProfiler, io_size, nameArray, is_forward, is_mpi)
 
     nthreadsDim = CustomDimension(name="i", symbolic_size=nthreads) 
     filesArray = Array(name='files', dimensions=[nthreadsDim], dtype=np.int32, ignoreDefinition=True)
@@ -216,11 +216,14 @@ def ooc_efuncs(iet, **kwargs):
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, nameArray, is_forward, is_mpi)
 
     calls = FindNodes(Call).visit(iet)
-    save_call = next((call for call in calls if call.name == 'save_temp'), None)
+    # save_call = next((call for call in calls if call.name == 'save_temp'), None)
     open_threads_call = next((call for call in calls if call.name == 'open_thread_files_temp'), None)
 
-    mapper={save_call: new_save_call,
-            open_threads_call: new_open_thread_call}
+    mapper={
+        # save_call: new_save_call,
+        open_threads_call: new_open_thread_call}
     iet = Transformer(mapper).visit(iet)
-    efuncs=[saveCallable, openThreadsCallable]
+    efuncs=[
+        # saveCallable, 
+        openThreadsCallable]
     return iet, {'efuncs': efuncs}

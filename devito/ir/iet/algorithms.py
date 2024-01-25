@@ -137,8 +137,8 @@ def _ooc_build(iet_body, nthreads, profiler, func, out_of_core, is_mpi):
     
 
     ######## Build save call ########
-    timerProfiler = Timer(profiler.name, [], ignoreDefinition=True)
-    saveCall = Call(name='save_temp', arguments=[nthreads, timerProfiler, ioSize])
+    # timerProfiler = Timer(profiler.name, [], ignoreDefinition=True)
+    # saveCall = Call(name='save_temp', arguments=[nthreads, timerProfiler, ioSize])
     
     #TODO: Generate blank lines between sections
     iet_body.insert(0, funcSizeExp)
@@ -146,7 +146,7 @@ def _ooc_build(iet_body, nthreads, profiler, func, out_of_core, is_mpi):
     iet_body.insert(0, openSection)
     iet_body.append(closeSection)
     iet_body.append(ioSizeExp)
-    iet_body.append(saveCall)
+    # iet_body.append(saveCall)
 
     return iet_body
 
