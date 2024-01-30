@@ -6,11 +6,12 @@ from pdb import set_trace
 from sympy import Mod
 from functools import reduce
 from collections import OrderedDict
+from sympy.codegen.ast import SignedIntType
 
 from devito.tools import timed_pass
 from devito.symbolics import (CondEq, CondNe, Macro, String)
-from devito.symbolics.extended_sympy import (FieldFromPointer, Byref)
-from devito.types import CustomDimension, Array, Symbol, Pointer, FILE, Timer, NThreads, TimeDimension, SpaceDimension, Scalar, Constant
+# from devito.symbolics.extended_sympy import (FieldFromPointer, Byref)
+from devito.types import (CustomDimension, Array, Symbol, TimeDimension, SpaceDimension, off_t)
 from devito.ir.iet import (Expression, Increment, Iteration, List, Conditional, SyncSpot,
                            Section, HaloSpot, ExpressionBundle, Call, Conditional, CallableBody, 
                            Callable, FindSymbols, FindNodes, Transformer, Return)
@@ -108,7 +109,6 @@ def _ooc_build(iet_body, nthreads, profiler, func, out_of_core, is_mpi):
 
 
     ######## Build files and counters arrays ########
-    set_trace()
     filesArray = Array(name='files', dimensions=[nthreadsDim], dtype=np.int32)
     countersArray = Array(name='counters', dimensions=[nthreadsDim], dtype=np.int32)
 
@@ -272,7 +272,7 @@ def read_build(nthreads, filesArray, iSymbol, func_size, funcStencil, t0, uVecSi
     # off_t offset = counters[tid] * func_size;
     # lseek(files[tid], -1 * offset, SEEK_END);
     # TODO: make offset be a off_t
-    offset = Symbol(name="offset", dtype=np.int32)
+    offset = Symbol(name="offset", dtype=off_t)
     offsetEq = IREq(offset, (-1)*counters[tid]*func_size)
     cOffsetEq = ClusterizedEq(offsetEq, ispace=ispace)
     itNodes.append(Expression(cOffsetEq, None, True))    
