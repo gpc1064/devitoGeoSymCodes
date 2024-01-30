@@ -185,8 +185,7 @@ class Operator(Callable):
         # Python- (i.e., compile-) and C-level (i.e., run-time) performance
         profiler = create_profile('timers')
 
-        out_of_core = kwargs['options']['out-of-core']
-        is_forward = out_of_core.mode == 'forward'
+        out_of_core = kwargs['options'].get('out-of-core', False)
         is_mpi = kwargs['options']['mpi']
 
         # Lower the input expressions into an IET
@@ -200,7 +199,7 @@ class Operator(Callable):
         op._headers = OrderedSet(*cls._default_headers)
         op._headers.update(byproduct.headers)
         if out_of_core: 
-            if is_forward:
+            if out_of_core.mode == "forward":
                 if is_mpi:
                     cls._out_of_core_headers_forward[1] = (("ifndef", "NDISKS"), ("NDISKS", "4"))
                 op._headers.update(cls._out_of_core_headers_forward)

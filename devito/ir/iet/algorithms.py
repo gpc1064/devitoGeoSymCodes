@@ -54,11 +54,11 @@ def iet_build(stree, **kwargs):
             body = Conditional(i.guard, queues.pop(i))
 
         elif i.is_Iteration:
-            iteration_nodes = [queues.pop(i)]
+            iteration_nodes = queues.pop(i)
             if isinstance(i.dim, TimeDimension) and ooc and ooc.mode == 'forward':
                 iteration_nodes.append(Section("write_temp"))
             elif isinstance(i.dim, TimeDimension) and ooc and ooc.mode == 'gradient':
-                iteration_nodes.append(Section("read_temp"))
+                iteration_nodes.insert(-1, Section("read_temp"))
 
             body = Iteration(iteration_nodes, i.dim, i.limits, direction=i.direction,
                              properties=i.properties, uindices=i.sub_iterators)
@@ -143,7 +143,7 @@ def _ooc_build(iet_body, nthreads, profiler, func, out_of_core, is_mpi):
     iet_body.insert(0, openSection)
     iet_body.append(closeSection)
     iet_body.append(ioSizeExp)
-    iet_body.append(saveCall)
+    #iet_body.append(saveCall)
 
     return iet_body
 
@@ -227,7 +227,7 @@ def write_build(nthreads, filesArray, iSymbol, func_size, funcStencil, t0, uVecS
         pragma = cgen.Pragma("omp parallel for schedule(static,1)")
     else:
         pragma = cgen.Pragma("omp parallel for schedule(static,1) num_threads(nthreads)")
-    writeIteration = Iteration(itNodes, uSizeDim, uVecSize1-1, pragmas=[pragma])
+    writeIteration = Iteration(itNodes, uSizeDim, uVecSize1-1)
 
     return Section("write", writeIteration)
 
@@ -298,7 +298,7 @@ def read_build(nthreads, filesArray, iSymbol, func_size, funcStencil, t0, uVecSi
     cNewCountersEq = ClusterizedEq(newCountersEq, ispace=ispace)
     itNodes.append(Increment(cNewCountersEq))
         
-    readIteration = Iteration(itNodes, iDim, uVecSize1-1, direction=Backward, pragmas=[pragma])
+    readIteration = Iteration(itNodes, iDim, uVecSize1-1, direction=Backward)
     
     section = Section("read", readIteration)
 

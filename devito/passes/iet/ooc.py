@@ -161,13 +161,13 @@ def open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, nameArray, is
         itNodes.append(Call(name="MPI_Comm_rank", arguments=[Macro("MPI_COMM_WORLD"), Byref(myrank)]))
         itNodes.append(Expression(cSocketEq, None, True)) 
         itNodes.append(Expression(cNvmeIdEq, None, True)) 
-        itNodes.append(Call(name="sprintf", arguments=[nameArray, String("\"data/nvme%d/socket_%d_thread_%d.data\""), nvme_id, myrank, iSymbol]))
+        itNodes.append(Call(name="sprintf", arguments=[nameArray, String("\"/home/gabriel.pinheiro/workspace/devitoGeoSym/data/nvme%d/socket_%d_thread_%d.data\""), nvme_id, myrank, iSymbol]))
     else:
         nvmeIdEq = IREq(nvme_id, Mod(iSymbol, ndisks))
         cNvmeIdEq = ClusterizedEq(nvmeIdEq, ispace=None)
         
         itNodes.append(Expression(cNvmeIdEq, None, True))   
-        itNodes.append(Call(name="sprintf", arguments=[nameArray, String("\"data/nvme%d/thread_%d.data\""), nvme_id, iSymbol]))
+        itNodes.append(Call(name="sprintf", arguments=[nameArray, String("\"/home/gabriel.pinheiro/workspace/devitoGeoSym/data/nvme%d/thread_%d.data\""), nvme_id, iSymbol]))
         
     
     if is_forward:
@@ -205,8 +205,8 @@ def ooc_efuncs(iet, **kwargs):
     nameDim = [CustomDimension(name="nameDim", symbolic_size=100)]
     nameArray = Array(name='name', dimensions=nameDim, dtype=np.byte)
 
-    new_save_call = Call(name="save", arguments=[nthreads, timerProfiler, io_size])
-    saveCallable = save_build(nthreads, timerProfiler, io_size, nameArray, is_forward, is_mpi)
+    #new_save_call = Call(name="save", arguments=[nthreads, timerProfiler, io_size])
+    #saveCallable = save_build(nthreads, timerProfiler, io_size, nameArray, is_forward, is_mpi)
 
     nthreadsDim = CustomDimension(name="i", symbolic_size=nthreads) 
     filesArray = Array(name='files', dimensions=[nthreadsDim], dtype=np.int32, ignoreDefinition=True)
@@ -216,11 +216,12 @@ def ooc_efuncs(iet, **kwargs):
     openThreadsCallable = open_threads_build(nthreads, filesArray, iSymbol, nthreadsDim, nameArray, is_forward, is_mpi)
 
     calls = FindNodes(Call).visit(iet)
-    save_call = next((call for call in calls if call.name == 'save_temp'), None)
+    #save_call = next((call for call in calls if call.name == 'save_temp'), None)
     open_threads_call = next((call for call in calls if call.name == 'open_thread_files_temp'), None)
 
-    mapper={save_call: new_save_call,
-            open_threads_call: new_open_thread_call}
+    #mapper={save_call: new_save_call,
+            #open_threads_call: new_open_thread_call}
+    mapper={open_threads_call: new_open_thread_call}
     iet = Transformer(mapper).visit(iet)
-    efuncs=[saveCallable, openThreadsCallable]
+    efuncs=[openThreadsCallable]
     return iet, {'efuncs': efuncs}
