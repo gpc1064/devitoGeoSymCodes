@@ -55,11 +55,11 @@ def iet_build(stree, **kwargs):
             body = Conditional(i.guard, queues.pop(i))
 
         elif i.is_Iteration:
-            iteration_nodes = [queues.pop(i)]
+            iteration_nodes = queues.pop(i)
             if isinstance(i.dim, TimeDimension) and ooc and ooc.mode == 'forward':
                 iteration_nodes.append(Section("write_temp"))
             elif isinstance(i.dim, TimeDimension) and ooc and ooc.mode == 'gradient':
-                iteration_nodes.append(Section("read_temp"))
+                iteration_nodes.insert(-1, Section("read_temp"))
 
             body = Iteration(iteration_nodes, i.dim, i.limits, direction=i.direction,
                              properties=i.properties, uindices=i.sub_iterators)
